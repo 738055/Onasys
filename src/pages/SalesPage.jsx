@@ -1,0 +1,362 @@
+import { useMemo, useState, useEffect } from 'react';
+import {
+  ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis,
+  CartesianGrid, Tooltip, ComposedChart, Line,
+} from 'recharts';
+import { abcCurve, groupByClientOrVendor } from '../utils/aggregations';
+import { BRLFULL, BRLk, PCTFMT } from '../utils/format';
+
+const PAGE_SIZE = 25;
+
+const METRIC_CFG = {
+  revenue:       { label: 'Faturamento', color: '#6366f1', axisFmt: BRLk,                    fmt: BRLFULL                  },
+  profitLiquido: { label: 'Líquido',     color: '#10b981', axisFmt: BRLk,                    fmt: BRLFULL                  },
+  marginPct:     { label: '% Margem',    color: '#f59e0b', axisFmt: v => `${v.toFixed(0)}%`, fmt: v => `${v.toFixed(2)}%`  },
+};
+
+function VendorTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-lg text-xs min-w-[180px]">
+      <p className="font-semibold text-slate-700 mb-2 max-w-[200px] truncate">{d.name}</p>
+      <div className="space-y-0.5">
+        <div className="flex justify-between gap-4"><span className="text-slate-500">Faturamento</span><span className="font-semibold tabular-nums">{BRLFULL(d.revenue)}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-slate-500">Líquido</span><span className={`font-semibold tabular-nums ${d.profitLiquido < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{BRLFULL(d.profitLiquido)}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-slate-500">% Margem</span><span className={`font-semibold tabular-nums ${d.marginPct < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{d.marginPct.toFixed(2)}%</span></div>
+      </div>
+    </div>
+  );
+}
+
+export default function SalesPage({ rows }) {
+  const [page, setPage] = useState(0);
+  const [groupField, setGroupField] = useState('client');
+  const [topN,       setTopN]       = useState(10);
+  const [topMetric,  setTopMetric]  = useState('revenue');
+  useEffect(() => { setPage(0); }, [rows]);
+
+  const topVendors = useMemo(() => {
+    const map = {};
+    for (const r of rows) {
+      const key = r.vendor || '(sem nome)';
+      if (!map[key]) map[key] = { name: key, revenue: 0, profitLiquido: 0 };
+      map[key].revenue       += r.revenue       || 0;
+      map[key].profitLiquido += r.profitLiquido || 0;
+    }
+    return Object.values(map)
+      .map(v => ({
+        ...v,
+        marginPct: v.revenue > 0 ? (v.profitLiquido / v.revenue) * 100 : 0,
+        value: topMetric === 'revenue'       ? v.revenue
+             : topMetric === 'profitLiquido' ? v.profitLiquido
+             : v.revenue > 0 ? (v.profitLiquido / v.revenue) * 100 : 0,
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, topN);
+  }, [rows, topN, topMetric]);
+  const abc        = useMemo(() => abcCurve(rows), [rows]);
+  const sorted     = useMemo(() => [...rows].sort((a, b) => b.revenue - a.revenue), [rows]);
+  const grouped    = useMemo(() => groupByClientOrVendor(rows, groupField), [rows, groupField]);
+
+  const pageCount = Math.ceil(sorted.length / PAGE_SIZE);
+  const pageRows  = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Top Vendors */}
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-700">
+                Top <span className="text-blue-600">{topN}</span> Emissores
+                {' — '}<span className="text-blue-600">{METRIC_CFG[topMetric].label}</span>
+              </h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {/* N selector */}
+              <div className="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-medium">
+                {[5, 10, 15, 20].map((n, i) => (
+                  <button
+                    key={n}
+                    onClick={() => setTopN(n)}
+                    className={`px-2.5 py-1 transition-colors ${i > 0 ? 'border-l border-slate-200' : ''} ${
+                      topN === n ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    Top {n}
+                  </button>
+                ))}
+              </div>
+              {/* Metric selector */}
+              <div className="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-medium">
+                {Object.entries(METRIC_CFG).map(([key, cfg], i) => (
+                  <button
+                    key={key}
+                    onClick={() => setTopMetric(key)}
+                    className={`px-2.5 py-1 transition-colors ${i > 0 ? 'border-l border-slate-200' : ''} ${
+                      topMetric === key ? 'text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                    style={topMetric === key ? { backgroundColor: cfg.color } : {}}
+                  >
+                    {cfg.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          {topVendors.length === 0 ? (
+            <p className="text-xs text-slate-400 py-10 text-center">Sem dados.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={Math.max(220, topN * 28)}>
+              <BarChart data={topVendors} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                <XAxis type="number" tickFormatter={METRIC_CFG[topMetric].axisFmt} tick={{ fontSize: 10 }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={110} />
+                <Tooltip content={<VendorTooltip />} />
+                <Bar dataKey="value" name={METRIC_CFG[topMetric].label} radius={[0, 4, 4, 0]}>
+                  {topVendors.map((entry, idx) => (
+                    <Cell
+                      key={`cell-${idx}`}
+                      fill={entry.value < 0 ? '#ef4444' : METRIC_CFG[topMetric].color}
+                      fillOpacity={1 - (idx / (topVendors.length * 1.6))}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        {/* ABC Curve */}
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
+          <h2 className="text-sm font-semibold text-slate-700 mb-1">Curva ABC — Clientes por Faturamento</h2>
+          <p className="text-xs text-slate-400 mb-4">Top 30 clientes | linha amarela = % acumulado</p>
+          {abc.length === 0 ? (
+            <p className="text-xs text-slate-400 py-10 text-center">Sem dados.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <ComposedChart data={abc}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="name" tick={false} />
+                <YAxis yAxisId="left"  tickFormatter={BRLk}               tick={{ fontSize: 10 }} />
+                <YAxis yAxisId="right" orientation="right" tickFormatter={v => `${v.toFixed(0)}%`} tick={{ fontSize: 10 }} />
+                <Tooltip
+                  formatter={(v, name) => name === '% Acumulado' ? `${Number(v).toFixed(1)}%` : BRLFULL(v)}
+                  labelFormatter={(_, p) => p?.[0]?.payload?.name || ''}
+                />
+                <Bar     yAxisId="left"  dataKey="revenue" name="Faturamento" fill="#3b82f6" />
+                <Line    yAxisId="right" type="monotone" dataKey="cumPct" name="% Acumulado" stroke="#f59e0b" strokeWidth={2} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      {/* Detail table */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
+        <h2 className="text-sm font-semibold text-slate-700 mb-3">
+          Detalhamento de Vendas
+          <span className="ml-2 text-slate-400 font-normal text-xs">({rows.length.toLocaleString('pt-BR')} registros)</span>
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-slate-200 text-slate-500 text-left">
+                <th className="pb-2 pr-3 font-semibold">Venda</th>
+                <th className="pb-2 pr-3 font-semibold">Emitido</th>
+                <th className="pb-2 pr-3 font-semibold">Filial</th>
+                <th className="pb-2 pr-3 font-semibold">Cliente</th>
+                <th className="pb-2 pr-3 font-semibold">Fornecedor</th>
+                <th className="pb-2 pr-3 font-semibold">Emissor</th>
+                <th className="pb-2 pr-3 font-semibold text-center">Pax</th>
+                <th className="pb-2 pr-3 font-semibold text-right">Faturamento</th>
+                <th className="pb-2 font-semibold text-right">Líquido</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageRows.map((r, i) => (
+                <tr
+                  key={`${r.id}-${i}`}
+                  className={`border-b border-slate-100 ${r.profitLiquido < 0 ? 'bg-red-50' : 'hover:bg-slate-50'}`}
+                >
+                  <td className="py-2 pr-3 font-mono text-slate-500">{r.id}</td>
+                  <td className="py-2 pr-3">{r.emissionDate ? r.emissionDate.toLocaleDateString('pt-BR') : '-'}</td>
+                  <td className="py-2 pr-3 max-w-[6rem] truncate">{r.filial}</td>
+                  <td className="py-2 pr-3 max-w-[8rem] truncate">{r.client}</td>
+                  <td className="py-2 pr-3 max-w-[8rem] truncate">{r.supplier}</td>
+                  <td className="py-2 pr-3 max-w-[6rem] truncate">{r.vendor}</td>
+                  <td className="py-2 pr-3 text-center">{r.passengers || '-'}</td>
+                  <td className="py-2 pr-3 text-right">{BRLFULL(r.revenue)}</td>
+                  <td className={`py-2 text-right font-semibold ${r.profitLiquido < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                    {BRLFULL(r.profitLiquido)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {pageCount > 1 && (
+          <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100">
+            <p className="text-xs text-slate-400">Página {page + 1} de {pageCount} ({rows.length.toLocaleString('pt-BR')} registros)</p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="px-2 py-1 text-xs border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-50"
+              >
+                ‹ Anterior
+              </button>
+              <button
+                onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))}
+                disabled={page === pageCount - 1}
+                className="px-2 py-1 text-xs border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-50"
+              >
+                Próxima ›
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Agrupamento por Clientes / Emissores / Fornecedor / Serviço */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          {(() => {
+            const LABELS = { client: 'Clientes', vendor: 'Emissores', supplier: 'Fornecedores', product: 'Serviços' };
+            const label  = LABELS[groupField] || groupField;
+            return (
+              <h2 className="text-sm font-semibold text-slate-700">
+                Agrupamento por <span className="text-blue-600">{label}</span>
+                <span className="ml-2 text-slate-400 font-normal text-xs">
+                  ({grouped.length.toLocaleString('pt-BR')} {label.toLowerCase()})
+                </span>
+              </h2>
+            );
+          })()}
+          <div className="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-medium">
+            {[
+              { value: 'client',   label: 'Cliente'    },
+              { value: 'vendor',   label: 'Emissor'    },
+              { value: 'supplier', label: 'Fornecedor' },
+              { value: 'product',  label: 'Serviço'    },
+            ].map((opt, i) => (
+              <button
+                key={opt.value}
+                onClick={() => setGroupField(opt.value)}
+                className={`px-3 py-1.5 transition-colors ${i > 0 ? 'border-l border-slate-200' : ''} ${
+                  groupField === opt.value
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Legenda do contador de pax */}
+        <p className="text-[10px] text-slate-400 mb-3">
+          {groupField === 'product'
+            ? 'Pax = soma de passageiros por item de serviço (cada ocorrência conta independentemente)'
+            : 'Pax = passageiros únicos por venda (sem duplicar itens da mesma venda)'}
+        </p>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-slate-200 text-slate-500 text-left">
+                <th className="pb-2 pr-3 font-semibold">#</th>
+                <th className="pb-2 pr-3 font-semibold">
+                  {{ client: 'Cliente', vendor: 'Emissor', supplier: 'Fornecedor', product: 'Serviço' }[groupField]}
+                </th>
+                <th className="pb-2 pr-3 font-semibold text-right">Total Vendido</th>
+                <th className="pb-2 pr-3 font-semibold text-right">
+                  {groupField === 'product' ? 'Pax (itens)' : 'Pax (vendas)'}
+                </th>
+                <th className="pb-2 pr-3 font-semibold text-right">Líquido</th>
+                <th className="pb-2 pr-3 font-semibold text-right">% Rent</th>
+                <th className="pb-2 pr-3 font-semibold text-right">
+                  <span>Comissão Emissor</span>
+                  <span className="block text-[10px] font-normal text-slate-400 leading-tight">a pagar no período</span>
+                </th>
+                <th className="pb-2 font-semibold text-right">
+                  <span>Resultado AB</span>
+                  <span className="block text-[10px] font-normal text-slate-400 leading-tight">c/ comissão deduzida</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {grouped.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-slate-400">Sem dados no período.</td>
+                </tr>
+              )}
+              {grouped.map((g, i) => {
+                const isNeg   = g.profitLiquido < 0;
+                const pctNeg  = g.rentPct !== null && g.rentPct < 0;
+                const abIsNeg = g.profit < 0;
+                const paxValue = groupField === 'product' ? g.passengers : g.uniquePassengers;
+                return (
+                  <tr
+                    key={g.name}
+                    className={`border-b border-slate-100 ${isNeg ? 'bg-red-50' : 'hover:bg-slate-50'}`}
+                  >
+                    <td className="py-2 pr-3 text-slate-400">{i + 1}</td>
+                    <td className="py-2 pr-3 font-medium text-slate-700 max-w-[16rem] truncate" title={g.name}>{g.name}</td>
+                    <td className="py-2 pr-3 text-right text-slate-700">{BRLFULL(g.revenue)}</td>
+                    <td className="py-2 pr-3 text-right text-slate-500">{paxValue.toLocaleString('pt-BR')}</td>
+                    <td className={`py-2 pr-3 text-right font-semibold ${isNeg ? 'text-red-600' : 'text-emerald-700'}`}>
+                      {BRLFULL(g.profitLiquido)}
+                    </td>
+                    <td className={`py-2 pr-3 text-right font-semibold tabular-nums ${pctNeg ? 'text-red-600' : 'text-emerald-700'}`}>
+                      {PCTFMT(g.rentPct)}
+                    </td>
+                    <td className="py-2 pr-3 text-right text-amber-700 tabular-nums">
+                      {g.commissionEmissor !== 0 ? BRLFULL(g.commissionEmissor) : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className={`py-2 text-right tabular-nums ${abIsNeg ? 'text-red-500' : 'text-slate-500'}`}>
+                      {BRLFULL(g.profit)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            {grouped.length > 0 && (() => {
+              const totRevenue = grouped.reduce((s, g) => s + g.revenue, 0);
+              const totLiquido = grouped.reduce((s, g) => s + g.profitLiquido, 0);
+              const totProfit  = grouped.reduce((s, g) => s + g.profit, 0);
+              const totComm    = grouped.reduce((s, g) => s + g.commissionEmissor, 0);
+              const totPax     = grouped.reduce((s, g) => s + (groupField === 'product' ? g.passengers : g.uniquePassengers), 0);
+              const totPct     = totRevenue !== 0 ? (totLiquido / totRevenue) * 100 : null;
+              return (
+                <tfoot>
+                  <tr className="border-t-2 border-slate-300 font-semibold text-slate-700 bg-slate-50">
+                    <td className="pt-2 pr-3" />
+                    <td className="pt-2 pr-3 text-xs">TOTAL</td>
+                    <td className="pt-2 pr-3 text-right text-xs">{BRLFULL(totRevenue)}</td>
+                    <td className="pt-2 pr-3 text-right text-xs">{totPax.toLocaleString('pt-BR')}</td>
+                    <td className={`pt-2 pr-3 text-right text-xs ${totLiquido < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                      {BRLFULL(totLiquido)}
+                    </td>
+                    <td className={`pt-2 pr-3 text-right text-xs ${totPct !== null && totPct < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                      {PCTFMT(totPct)}
+                    </td>
+                    <td className="pt-2 pr-3 text-right text-xs text-amber-700">
+                      {BRLFULL(totComm)}
+                    </td>
+                    <td className={`pt-2 text-right text-xs ${totProfit < 0 ? 'text-red-500' : 'text-slate-500'}`}>
+                      {BRLFULL(totProfit)}
+                    </td>
+                  </tr>
+                </tfoot>
+              );
+            })()}
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
