@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import {
   ResponsiveContainer, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -7,6 +7,7 @@ import { TrendingUp, TrendingDown } from 'lucide-react';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { calcKPIs, groupByClientOrVendor } from '../utils/aggregations';
 import { BRLFULL, BRLk, SEGMENT_CFG } from '../utils/format';
+import { ExportButton } from '../components/ExportButton';
 
 const ISO   = d => d.toISOString().slice(0, 10);
 const fmtBR = s => s ? new Date(`${s}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
@@ -144,6 +145,8 @@ function PeriodConfig({ badge, badgeClass, label, start, end, qual, sys, onStart
 }
 
 export default function ComparativosPage() {
+  const segChartRef = useRef(null);
+
   const [startA, setStartA] = useState(firstOf(N));
   const [endA,   setEndA]   = useState(ISO(N));
   const [qualA,  setQualA]  = useState(1);
@@ -241,11 +244,33 @@ export default function ComparativosPage() {
 
       {/* KPI cards */}
       <div>
-        <p className="text-[10px] text-slate-400 mb-2 uppercase tracking-wider">
-          <span className="font-bold text-blue-500">A</span>: {labelA}
-          &nbsp;·&nbsp;
-          <span className="font-bold text-slate-500">B</span>: {labelB}
-        </p>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <p className="text-[10px] text-slate-400 uppercase tracking-wider">
+            <span className="font-bold text-blue-500">A</span>: {labelA}
+            &nbsp;·&nbsp;
+            <span className="font-bold text-slate-500">B</span>: {labelB}
+          </p>
+          <ExportButton
+            title="KPIs Comparativos A vs B"
+            slug="comp-kpis"
+            sections={[{
+              title: `KPIs Comparativos — A: ${labelA} vs B: ${labelB}`,
+              columns: [
+                { key: 'indicador', label: 'Indicador',     type: 'text' },
+                { key: 'aFmt',      label: `A (${labelA})`, type: 'text' },
+                { key: 'bFmt',      label: `B (${labelB})`, type: 'text' },
+                { key: 'delta',     label: 'Δ %',           type: 'text' },
+              ],
+              rows: [
+                { indicador: 'Faturamento',  aFmt: BRLFULL(kpiA.revenue),          bFmt: BRLFULL(kpiB.revenue),          delta: pctDelta(kpiA.revenue, kpiB.revenue) != null ? `${pctDelta(kpiA.revenue, kpiB.revenue).toFixed(1)}%` : '-' },
+                { indicador: 'Líquido',      aFmt: BRLFULL(kpiA.profitLiquido),    bFmt: BRLFULL(kpiB.profitLiquido),    delta: pctDelta(kpiA.profitLiquido, kpiB.profitLiquido) != null ? `${pctDelta(kpiA.profitLiquido, kpiB.profitLiquido).toFixed(1)}%` : '-' },
+                { indicador: '% Margem',     aFmt: `${kpiA.margin.toFixed(2)}%`,   bFmt: `${kpiB.margin.toFixed(2)}%`,   delta: '-' },
+                { indicador: 'Passageiros',  aFmt: kpiA.uniquePassengers.toLocaleString('pt-BR'), bFmt: kpiB.uniquePassengers.toLocaleString('pt-BR'), delta: pctDelta(kpiA.uniquePassengers, kpiB.uniquePassengers) != null ? `${pctDelta(kpiA.uniquePassengers, kpiB.uniquePassengers).toFixed(1)}%` : '-' },
+                { indicador: 'Nº Vendas',    aFmt: kpiA.uniqueSales.toLocaleString('pt-BR'),      bFmt: kpiB.uniqueSales.toLocaleString('pt-BR'),      delta: pctDelta(kpiA.uniqueSales, kpiB.uniqueSales) != null ? `${pctDelta(kpiA.uniqueSales, kpiB.uniqueSales).toFixed(1)}%` : '-' },
+              ],
+            }]}
+          />
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           <KpiCard title="Faturamento"  aVal={kpiA.revenue}          bVal={kpiB.revenue}          format="currency" />
           <KpiCard title="Líquido"      aVal={kpiA.profitLiquido}    bVal={kpiB.profitLiquido}    format="currency" />
@@ -257,7 +282,24 @@ export default function ComparativosPage() {
 
       {/* Segment chart */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
-        <h2 className="text-sm font-semibold text-slate-700 mb-1">Faturamento por Segmento</h2>
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <h2 className="text-sm font-semibold text-slate-700">Faturamento por Segmento</h2>
+          <ExportButton
+            title="Faturamento por Segmento A vs B"
+            slug="comp-segmentos"
+            chartRef={segChartRef}
+            sections={[{
+              title: 'Faturamento por Segmento — A vs B',
+              chartRef: segChartRef,
+              columns: [
+                { key: 'name', label: 'Segmento',           type: 'text'     },
+                { key: 'A',    label: `Fat. A (${labelA})`, type: 'currency', total: true },
+                { key: 'B',    label: `Fat. B (${labelB})`, type: 'currency', total: true },
+              ],
+              rows: segmentChart,
+            }]}
+          />
+        </div>
         <p className="text-xs text-slate-400 mb-4">
           <span className="inline-block w-3 h-2 rounded-sm bg-blue-500 mr-1.5 align-middle" />A: {labelA}
           &nbsp;&nbsp;
@@ -266,6 +308,7 @@ export default function ComparativosPage() {
         {segmentChart.every(s => s.A === 0 && s.B === 0) ? (
           <p className="text-xs text-slate-400 py-10 text-center">Sem dados para comparar.</p>
         ) : (
+          <div ref={segChartRef}>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={segmentChart} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
@@ -277,6 +320,7 @@ export default function ComparativosPage() {
               <Bar dataKey="B" fill="#94a3b8" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          </div>
         )}
       </div>
 
@@ -290,6 +334,7 @@ export default function ComparativosPage() {
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">Ordenado por volume total (A + B)</p>
           </div>
+          <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-medium">
             {DIM_OPTS.map((o, i) => (
               <button
@@ -300,6 +345,29 @@ export default function ComparativosPage() {
                 {o.label}
               </button>
             ))}
+          </div>
+          <ExportButton
+            title={`Comparativo por ${dimLabel}`}
+            slug="comp-dimensao"
+            sections={[{
+              title: `Comparativo por ${dimLabel}`,
+              columns: [
+                { key: 'name', label: dimLabel,         type: 'text'     },
+                { key: 'fatA', label: `Fat. A`,         type: 'currency', total: true },
+                { key: 'fatB', label: `Fat. B`,         type: 'currency', total: true },
+                { key: 'liqA', label: `Líq. A`,         type: 'currency', total: true },
+                { key: 'liqB', label: `Líq. B`,         type: 'currency', total: true },
+                { key: 'pctA', label: `% Marg. A`,      type: 'percent'  },
+                { key: 'pctB', label: `% Marg. B`,      type: 'percent'  },
+              ],
+              rows: dimTable.map(({ name, ra, rb }) => ({
+                name:  dim === 'segment' ? (SEGMENT_CFG[name]?.label || name) : name,
+                fatA:  ra.revenue,       fatB: rb.revenue,
+                liqA:  ra.profitLiquido, liqB: rb.profitLiquido,
+                pctA:  ra.rentPct,       pctB: rb.rentPct,
+              })),
+            }]}
+          />
           </div>
         </div>
 

@@ -1,16 +1,19 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, PieChart, Pie, Cell,
 } from 'recharts';
 import { groupByClientOrVendor, topNByField } from '../utils/aggregations';
 import { BRLFULL, BRLk, PCTFMT, SEGMENT_CFG } from '../utils/format';
+import { ExportButton } from '../components/ExportButton';
 
 const PAGE_SIZE = 30;
 
 export default function ServicesPage({ rows }) {
   const [prodPage, setProdPage] = useState(0);
   useEffect(() => { setProdPage(0); }, [rows]);
+  const segMixRef  = useRef(null);
+  const top20Ref   = useRef(null);
 
   const segmentData = useMemo(() => {
     const groups = groupByClientOrVendor(rows, 'segment').filter(s => s.revenue > 0);
@@ -35,12 +38,31 @@ export default function ServicesPage({ rows }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Donut */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
-          <h2 className="text-sm font-semibold text-slate-700 mb-1">Mix por Segmento — Faturamento</h2>
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <h2 className="text-sm font-semibold text-slate-700">Mix por Segmento — Faturamento</h2>
+            <ExportButton
+              title="Mix por Segmento — Faturamento"
+              slug="servicos-mix-segmento"
+              chartRef={segMixRef}
+              sections={[{
+                title: 'Mix por Segmento',
+                chartRef: segMixRef,
+                columns: [
+                  { key: 'label',        label: 'Segmento',    type: 'text'     },
+                  { key: 'revenue',      label: 'Faturamento', type: 'currency', total: true },
+                  { key: 'uniquePassengers', label: 'Pax',     type: 'number'   },
+                  { key: 'profitLiquido',label: 'Líquido',     type: 'currency', total: true },
+                  { key: 'rentPct',      label: '% Rent.',     type: 'percent'  },
+                ],
+                rows: segmentData,
+              }]}
+            />
+          </div>
           <p className="text-xs text-slate-400 mb-4">Composição do faturamento por categoria de serviço</p>
           {segmentData.length === 0 ? (
             <p className="text-xs text-slate-400 py-10 text-center">Sem dados.</p>
           ) : (
-            <div className="flex items-center gap-6">
+            <div ref={segMixRef} className="flex items-center gap-6">
               <ResponsiveContainer width="50%" height={220}>
                 <PieChart>
                   <Pie data={segmentData} dataKey="revenue" nameKey="label" cx="50%" cy="50%" outerRadius={90} innerRadius={45}>
@@ -74,7 +96,24 @@ export default function ServicesPage({ rows }) {
 
         {/* Segment table */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">Detalhe por Segmento</h2>
+          <div className="flex items-start justify-between gap-2 mb-4">
+            <h2 className="text-sm font-semibold text-slate-700">Detalhe por Segmento</h2>
+            <ExportButton
+              title="Detalhe por Segmento"
+              slug="servicos-detalhe-segmento"
+              sections={[{
+                title: 'Detalhe por Segmento',
+                columns: [
+                  { key: 'label',        label: 'Segmento',    type: 'text'     },
+                  { key: 'revenue',      label: 'Faturamento', type: 'currency', total: true },
+                  { key: 'uniquePassengers', label: 'Pax',     type: 'number'   },
+                  { key: 'profitLiquido',label: 'Líquido',     type: 'currency', total: true },
+                  { key: 'rentPct',      label: '% Rent.',     type: 'percent'  },
+                ],
+                rows: segmentData,
+              }]}
+            />
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
@@ -133,11 +172,28 @@ export default function ServicesPage({ rows }) {
 
       {/* Top 20 Products bar chart */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
-        <h2 className="text-sm font-semibold text-slate-700 mb-1">Top 20 Serviços — Faturamento</h2>
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <h2 className="text-sm font-semibold text-slate-700">Top 20 Serviços — Faturamento</h2>
+          <ExportButton
+            title="Top 20 Serviços"
+            slug="servicos-top20"
+            chartRef={top20Ref}
+            sections={[{
+              title: 'Top 20 Serviços',
+              chartRef: top20Ref,
+              columns: [
+                { key: 'name',  label: 'Serviço',     type: 'text'     },
+                { key: 'value', label: 'Faturamento', type: 'currency', total: true },
+              ],
+              rows: topProducts,
+            }]}
+          />
+        </div>
         <p className="text-xs text-slate-400 mb-4">Ranking dos serviços com maior volume</p>
         {topProducts.length === 0 ? (
           <p className="text-xs text-slate-400 py-10 text-center">Sem dados.</p>
         ) : (
+          <div ref={top20Ref}>
           <ResponsiveContainer width="100%" height={420}>
             <BarChart data={topProducts} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
@@ -147,15 +203,34 @@ export default function ServicesPage({ rows }) {
               <Bar dataKey="value" name="Faturamento" fill="#10b981" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          </div>
         )}
       </div>
 
       {/* Full product ranking table */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
-        <h2 className="text-sm font-semibold text-slate-700 mb-3">
-          Ranking Completo de Serviços
-          <span className="ml-2 text-slate-400 font-normal text-xs">({allProducts.length.toLocaleString('pt-BR')} serviços)</span>
-        </h2>
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <h2 className="text-sm font-semibold text-slate-700">
+            Ranking Completo de Serviços
+            <span className="ml-2 text-slate-400 font-normal text-xs">({allProducts.length.toLocaleString('pt-BR')} serviços)</span>
+          </h2>
+          <ExportButton
+            title="Ranking Completo de Serviços"
+            slug="servicos-ranking"
+            sections={[{
+              title: 'Ranking de Serviços',
+              columns: [
+                { key: 'name',         label: 'Serviço',     type: 'text'     },
+                { key: 'revenue',      label: 'Faturamento', type: 'currency', total: true },
+                { key: 'passengers',   label: 'Pax (itens)', type: 'number'   },
+                { key: 'profitLiquido',label: 'Líquido',     type: 'currency', total: true },
+                { key: 'rentPct',      label: '% Rent.',     type: 'percent'  },
+                { key: 'profit',       label: 'Resultado AB',type: 'currency', total: true },
+              ],
+              rows: allProducts,
+            }]}
+          />
+        </div>
         <p className="text-[10px] text-slate-400 mb-3">Pax = soma de passageiros por item de serviço (cada ocorrência conta independentemente)</p>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">

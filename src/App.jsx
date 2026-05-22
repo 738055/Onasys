@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useDashboardData } from './hooks/useDashboardData';
 import { FilterBar } from './components/FilterBar';
 import { Loader } from './components/Loader';
+import { ExportProvider } from './contexts/ExportContext';
 import ExecutivePage from './pages/ExecutivePage';
 import MarginPage from './pages/MarginPage';
 import SalesPage from './pages/SalesPage';
@@ -60,7 +61,21 @@ export default function App() {
     vendors:     [...new Set(allRows.map(r => r.vendor).filter(Boolean))].sort(),
   }), [allRows]);
 
+  const exportCtx = useMemo(() => ({
+    startDate,
+    endDate,
+    qualPeriodo,
+    nSistema,
+    filters: {
+      filial:     filialFilter,
+      channel:    channelFilter,
+      clientType: clientTypeFilter,
+      vendor:     vendorFilter,
+    },
+  }), [startDate, endDate, qualPeriodo, nSistema, filialFilter, channelFilter, clientTypeFilter, vendorFilter]);
+
   return (
+    <ExportProvider value={exportCtx}>
     <div className="min-h-screen bg-slate-50 font-sans">
       {/* Header */}
       <header className="bg-white border-b border-slate-200 px-6 py-4">
@@ -195,5 +210,6 @@ export default function App() {
         )}
       </main>
     </div>
+    </ExportProvider>
   );
 }

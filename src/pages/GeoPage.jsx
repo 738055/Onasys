@@ -1,12 +1,15 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ComposedChart, Line,
 } from 'recharts';
 import { groupByClientOrVendor } from '../utils/aggregations';
 import { BRLFULL, BRLk, PCTFMT } from '../utils/format';
+import { ExportButton } from '../components/ExportButton';
 
 export default function GeoPage({ rows }) {
+  const regionChartRef = useRef(null);
+  const stateChartRef  = useRef(null);
   const regions = useMemo(() => groupByClientOrVendor(rows, 'region'), [rows]);
   const states  = useMemo(() => groupByClientOrVendor(rows, 'state'),  [rows]);
 
@@ -26,11 +29,32 @@ export default function GeoPage({ rows }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Region bar chart */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
-          <h2 className="text-sm font-semibold text-slate-700 mb-1">Faturamento por Região</h2>
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <h2 className="text-sm font-semibold text-slate-700">Faturamento por Região</h2>
+            <ExportButton
+              title="Faturamento por Região"
+              slug="geo-regioes"
+              chartRef={regionChartRef}
+              sections={[{
+                title: 'Faturamento por Região',
+                chartRef: regionChartRef,
+                columns: [
+                  { key: 'name',             label: 'Região',      type: 'text'     },
+                  { key: 'revenue',          label: 'Faturamento', type: 'currency', total: true },
+                  { key: 'revPct',           label: '% Total',     type: 'percent'  },
+                  { key: 'uniquePassengers', label: 'Pax',         type: 'number'   },
+                  { key: 'profitLiquido',    label: 'Líquido',     type: 'currency', total: true },
+                  { key: 'rentPct',          label: '% Rent.',     type: 'percent'  },
+                ],
+                rows: regionsWithPct,
+              }]}
+            />
+          </div>
           <p className="text-xs text-slate-400 mb-4">Regiões do Brasil ordenadas por faturamento</p>
           {regions.length === 0 ? (
             <p className="text-xs text-slate-400 py-10 text-center">Sem dados.</p>
           ) : (
+            <div ref={regionChartRef}>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={regionsWithPct} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
@@ -42,6 +66,7 @@ export default function GeoPage({ rows }) {
                 <Bar dataKey="revenue" name="Faturamento" fill="#6366f1" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
+            </div>
           )}
         </div>
 
@@ -110,11 +135,34 @@ export default function GeoPage({ rows }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* States bar chart */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
-          <h2 className="text-sm font-semibold text-slate-700 mb-1">Top 15 Estados — Faturamento</h2>
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <h2 className="text-sm font-semibold text-slate-700">Top 15 Estados — Faturamento</h2>
+            <ExportButton
+              title="Ranking de Estados"
+              slug="geo-estados"
+              chartRef={stateChartRef}
+              sections={[{
+                title: 'Ranking de Estados',
+                chartRef: stateChartRef,
+                columns: [
+                  { key: 'name',             label: 'UF',          type: 'text'     },
+                  { key: 'revenue',          label: 'Faturamento', type: 'currency', total: true },
+                  { key: 'revPct',           label: '% Total',     type: 'percent'  },
+                  { key: 'uniquePassengers', label: 'Pax',         type: 'number'   },
+                  { key: 'rentPct',          label: '% Rent.',     type: 'percent'  },
+                ],
+                rows: states.map(s => ({
+                  ...s,
+                  revPct: stateTotal > 0 ? (s.revenue / stateTotal) * 100 : 0,
+                })),
+              }]}
+            />
+          </div>
           <p className="text-xs text-slate-400 mb-4">Estados com maior volume de faturamento</p>
           {top15States.length === 0 ? (
             <p className="text-xs text-slate-400 py-10 text-center">Sem dados.</p>
           ) : (
+            <div ref={stateChartRef}>
             <ResponsiveContainer width="100%" height={360}>
               <BarChart data={top15States} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
@@ -124,6 +172,7 @@ export default function GeoPage({ rows }) {
                 <Bar dataKey="revenue" name="Faturamento" fill="#06b6d4" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
+            </div>
           )}
         </div>
 

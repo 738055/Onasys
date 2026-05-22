@@ -1,10 +1,11 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import {
   ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis,
   CartesianGrid, Tooltip, ComposedChart, Line,
 } from 'recharts';
 import { abcCurve, groupByClientOrVendor } from '../utils/aggregations';
 import { BRLFULL, BRLk, PCTFMT } from '../utils/format';
+import { ExportButton } from '../components/ExportButton';
 
 const PAGE_SIZE = 25;
 
@@ -35,6 +36,8 @@ export default function SalesPage({ rows }) {
   const [topN,       setTopN]       = useState(10);
   const [topMetric,  setTopMetric]  = useState('revenue');
   useEffect(() => { setPage(0); }, [rows]);
+  const topVendorsRef = useRef(null);
+  const abcRef        = useRef(null);
 
   const topVendors = useMemo(() => {
     const map = {};
@@ -74,7 +77,7 @@ export default function SalesPage({ rows }) {
                 {' — '}<span className="text-blue-600">{METRIC_CFG[topMetric].label}</span>
               </h2>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 items-center">
               {/* N selector */}
               <div className="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-medium">
                 {[5, 10, 15, 20].map((n, i) => (
@@ -104,11 +107,28 @@ export default function SalesPage({ rows }) {
                   </button>
                 ))}
               </div>
+              <ExportButton
+                title={`Top ${topN} Emissores — ${METRIC_CFG[topMetric].label}`}
+                slug="vendas-top-emissores"
+                chartRef={topVendorsRef}
+                sections={[{
+                  title: `Top ${topN} Emissores`,
+                  chartRef: topVendorsRef,
+                  columns: [
+                    { key: 'name',         label: 'Emissor',     type: 'text'     },
+                    { key: 'revenue',      label: 'Faturamento', type: 'currency', total: true },
+                    { key: 'profitLiquido',label: 'Líquido',     type: 'currency', total: true },
+                    { key: 'marginPct',    label: '% Margem',    type: 'percent'  },
+                  ],
+                  rows: topVendors,
+                }]}
+              />
             </div>
           </div>
           {topVendors.length === 0 ? (
             <p className="text-xs text-slate-400 py-10 text-center">Sem dados.</p>
           ) : (
+            <div ref={topVendorsRef}>
             <ResponsiveContainer width="100%" height={Math.max(220, topN * 28)}>
               <BarChart data={topVendors} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
@@ -126,16 +146,35 @@ export default function SalesPage({ rows }) {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+            </div>
           )}
         </div>
 
         {/* ABC Curve */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
-          <h2 className="text-sm font-semibold text-slate-700 mb-1">Curva ABC — Clientes por Faturamento</h2>
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <h2 className="text-sm font-semibold text-slate-700">Curva ABC — Clientes por Faturamento</h2>
+            <ExportButton
+              title="Curva ABC — Clientes"
+              slug="vendas-abc-clientes"
+              chartRef={abcRef}
+              sections={[{
+                title: 'Curva ABC — Clientes',
+                chartRef: abcRef,
+                columns: [
+                  { key: 'name',   label: 'Cliente',        type: 'text'     },
+                  { key: 'revenue',label: 'Faturamento',    type: 'currency', total: true },
+                  { key: 'cumPct', label: '% Acumulado',    type: 'percent'  },
+                ],
+                rows: abc,
+              }]}
+            />
+          </div>
           <p className="text-xs text-slate-400 mb-4">Top 30 clientes | linha amarela = % acumulado</p>
           {abc.length === 0 ? (
             <p className="text-xs text-slate-400 py-10 text-center">Sem dados.</p>
           ) : (
+            <div ref={abcRef}>
             <ResponsiveContainer width="100%" height={260}>
               <ComposedChart data={abc}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -150,16 +189,41 @@ export default function SalesPage({ rows }) {
                 <Line    yAxisId="right" type="monotone" dataKey="cumPct" name="% Acumulado" stroke="#f59e0b" strokeWidth={2} dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
+            </div>
           )}
         </div>
       </div>
 
       {/* Detail table */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
-        <h2 className="text-sm font-semibold text-slate-700 mb-3">
-          Detalhamento de Vendas
-          <span className="ml-2 text-slate-400 font-normal text-xs">({rows.length.toLocaleString('pt-BR')} registros)</span>
-        </h2>
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <h2 className="text-sm font-semibold text-slate-700">
+            Detalhamento de Vendas
+            <span className="ml-2 text-slate-400 font-normal text-xs">({rows.length.toLocaleString('pt-BR')} registros)</span>
+          </h2>
+          <ExportButton
+            title="Detalhamento de Vendas"
+            slug="vendas-detalhe"
+            sections={[{
+              title: 'Detalhamento de Vendas',
+              columns: [
+                { key: 'id',           label: 'Venda',       type: 'text'     },
+                { key: 'emissionDate', label: 'Emitido',     type: 'text'     },
+                { key: 'filial',       label: 'Filial',      type: 'text'     },
+                { key: 'client',       label: 'Cliente',     type: 'text'     },
+                { key: 'supplier',     label: 'Fornecedor',  type: 'text'     },
+                { key: 'vendor',       label: 'Emissor',     type: 'text'     },
+                { key: 'passengers',   label: 'Pax',         type: 'number'   },
+                { key: 'revenue',      label: 'Faturamento', type: 'currency', total: true },
+                { key: 'profitLiquido',label: 'Líquido',     type: 'currency', total: true },
+              ],
+              rows: sorted.map(r => ({
+                ...r,
+                emissionDate: r.emissionDate ? r.emissionDate.toLocaleDateString('pt-BR') : '-',
+              })),
+            }]}
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
@@ -235,6 +299,7 @@ export default function SalesPage({ rows }) {
               </h2>
             );
           })()}
+          <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-medium">
             {[
               { value: 'client',   label: 'Cliente'    },
@@ -254,6 +319,27 @@ export default function SalesPage({ rows }) {
                 {opt.label}
               </button>
             ))}
+          </div>
+          <ExportButton
+            title={`Agrupamento por ${{ client: 'Cliente', vendor: 'Emissor', supplier: 'Fornecedor', product: 'Serviço' }[groupField]}`}
+            slug="vendas-agrupamento"
+            sections={[{
+              title: 'Agrupamento por ' + groupField,
+              columns: [
+                { key: 'name',             label: { client: 'Cliente', vendor: 'Emissor', supplier: 'Fornecedor', product: 'Serviço' }[groupField], type: 'text' },
+                { key: 'revenue',          label: 'Faturamento',        type: 'currency', total: true },
+                { key: 'pax',              label: 'Pax',                type: 'number'   },
+                { key: 'profitLiquido',    label: 'Líquido',            type: 'currency', total: true },
+                { key: 'rentPct',          label: '% Rent.',            type: 'percent'  },
+                { key: 'commissionEmissor',label: 'Comissão Emissor',   type: 'currency'  },
+                { key: 'profit',           label: 'Resultado AB',       type: 'currency', total: true },
+              ],
+              rows: grouped.map(g => ({
+                ...g,
+                pax: groupField === 'product' ? g.passengers : g.uniquePassengers,
+              })),
+            }]}
+          />
           </div>
         </div>
 

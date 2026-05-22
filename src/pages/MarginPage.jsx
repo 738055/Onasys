@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import {
   ResponsiveContainer, ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
@@ -6,6 +6,7 @@ import {
 } from 'recharts';
 import { scatterBySupplier } from '../utils/aggregations';
 import { BRLFULL, BRLk } from '../utils/format';
+import { ExportButton } from '../components/ExportButton';
 
 const PAGE_SIZE = 20;
 
@@ -47,6 +48,8 @@ function DistTooltip({ active, payload }) {
 export default function MarginPage({ rows }) {
   const [page, setPage] = useState(0);
   useEffect(() => { setPage(0); }, [rows]);
+  const distRef    = useRef(null);
+  const scatterRef = useRef(null);
 
   const scatter = useMemo(() => scatterBySupplier(rows), [rows]);
   const losses  = useMemo(() => rows.filter(r => r.profitLiquido < 0).sort((a, b) => a.profitLiquido - b.profitLiquido), [rows]);
@@ -102,12 +105,29 @@ export default function MarginPage({ rows }) {
 
       {/* Distribution histogram */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
-        <h2 className="text-sm font-semibold text-slate-700 mb-1">Distribuição de Margem por Item</h2>
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <h2 className="text-sm font-semibold text-slate-700">Distribuição de Margem por Item</h2>
+          <ExportButton
+            title="Distribuição de Margem por Item"
+            slug="margens-distribuicao"
+            chartRef={distRef}
+            sections={[{
+              title: 'Distribuição de Margem',
+              chartRef: distRef,
+              columns: [
+                { key: 'label',   label: 'Faixa de Margem',  type: 'text'     },
+                { key: 'count',   label: 'Nº Itens',         type: 'number'   },
+                { key: 'revenue', label: 'Faturamento Total', type: 'currency', total: true },
+              ],
+              rows: distribution,
+            }]}
+          />
+        </div>
         <p className="text-xs text-slate-400 mb-4">Quantidade de itens por faixa de rentabilidade — vermelho = prejuízo, verde = lucro</p>
         {rows.length === 0 ? (
           <p className="text-xs text-slate-400 py-10 text-center">Sem dados.</p>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          <div ref={distRef} className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={distribution} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
@@ -148,11 +168,30 @@ export default function MarginPage({ rows }) {
 
       {/* Scatter */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
-        <h2 className="text-sm font-semibold text-slate-700 mb-1">Margem vs Faturamento por Fornecedor</h2>
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <h2 className="text-sm font-semibold text-slate-700">Margem vs Faturamento por Fornecedor</h2>
+          <ExportButton
+            title="Margem vs Faturamento por Fornecedor"
+            slug="margens-scatter-fornecedor"
+            chartRef={scatterRef}
+            sections={[{
+              title: 'Scatter — Margem vs Faturamento',
+              chartRef: scatterRef,
+              columns: [
+                { key: 'name',         label: 'Fornecedor',   type: 'text'     },
+                { key: 'revenue',      label: 'Faturamento',  type: 'currency', total: true },
+                { key: 'profitLiquido',label: 'Líquido',      type: 'currency', total: true },
+                { key: 'margin',       label: '% Margem',     type: 'percent'  },
+              ],
+              rows: scatter,
+            }]}
+          />
+        </div>
         <p className="text-xs text-slate-400 mb-4">Cada ponto = 1 fornecedor agregado no período. Abaixo da linha vermelha = prejuízo.</p>
         {scatter.length === 0 ? (
           <p className="text-xs text-slate-400 py-10 text-center">Sem dados.</p>
         ) : (
+          <div ref={scatterRef}>
           <ResponsiveContainer width="100%" height={300}>
             <ScatterChart margin={{ top: 10, right: 20, bottom: 30, left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -174,15 +213,40 @@ export default function MarginPage({ rows }) {
               <Scatter data={scatter} fill="#3b82f6" opacity={0.65} />
             </ScatterChart>
           </ResponsiveContainer>
+          </div>
         )}
       </div>
 
       {/* Loss table */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
-        <h2 className="text-sm font-semibold text-slate-700 mb-3">
-          Itens com Resultado Negativo
-          <span className="ml-2 text-red-500 font-normal text-xs">({losses.length.toLocaleString('pt-BR')} itens)</span>
-        </h2>
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <h2 className="text-sm font-semibold text-slate-700">
+            Itens com Resultado Negativo
+            <span className="ml-2 text-red-500 font-normal text-xs">({losses.length.toLocaleString('pt-BR')} itens)</span>
+          </h2>
+          <ExportButton
+            title="Itens com Resultado Negativo"
+            slug="margens-prejuizos"
+            sections={[{
+              title: 'Itens com Resultado Negativo',
+              columns: [
+                { key: 'id',           label: 'Venda',        type: 'text'     },
+                { key: 'emissionDate', label: 'Emitido',      type: 'text'     },
+                { key: 'client',       label: 'Cliente',      type: 'text'     },
+                { key: 'supplier',     label: 'Fornecedor',   type: 'text'     },
+                { key: 'product',      label: 'Produto',      type: 'text'     },
+                { key: 'revenue',      label: 'Faturamento',  type: 'currency', total: true },
+                { key: 'profitLiquido',label: 'Lucro Líquido',type: 'currency', total: true },
+                { key: 'marginPctStr', label: '% Rent.',      type: 'text'     },
+              ],
+              rows: losses.map(r => ({
+                ...r,
+                emissionDate: r.emissionDate ? r.emissionDate.toLocaleDateString('pt-BR') : '-',
+                marginPctStr: r.revenue > 0 ? `${(r.profitLiquido / r.revenue * 100).toFixed(2)}%` : '-',
+              })),
+            }]}
+          />
+        </div>
         {losses.length === 0 ? (
           <p className="text-xs text-slate-400 py-10 text-center">Nenhum item com resultado negativo no período.</p>
         ) : (

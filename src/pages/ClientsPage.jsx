@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { BRLFULL, BRLk, PCTFMT, SEGMENT_CFG } from '../utils/format';
+import { ExportButton } from '../components/ExportButton';
 
 function IconUsers() {
   return (
@@ -179,8 +180,28 @@ export default function ClientsPage({ rows }) {
       {/* ── Panel 1: Client Types ───────────────────────────────────── */}
       <div className="w-56 flex-shrink-0 border-r border-slate-200 flex flex-col">
         <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex-shrink-0">
-          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Tipo de Cliente</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">{clientTypes.length} tipos · campo REDE</p>
+          <div className="flex items-start justify-between gap-1">
+            <div>
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Tipo de Cliente</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">{clientTypes.length} tipos · campo REDE</p>
+            </div>
+            <ExportButton
+              title="Tipos de Cliente"
+              slug="clientes-tipos"
+              sections={[{
+                title: 'Tipos de Cliente (REDE)',
+                columns: [
+                  { key: 'name',         label: 'Tipo Cliente', type: 'text'     },
+                  { key: 'clientCount',  label: 'Nº Clientes',  type: 'number'   },
+                  { key: 'saleCount',    label: 'Nº Vendas',    type: 'number'   },
+                  { key: 'revenue',      label: 'Faturamento',  type: 'currency', total: true },
+                  { key: 'profitLiquido',label: 'Líquido',      type: 'currency', total: true },
+                  { key: 'rentPct',      label: '% Rent.',      type: 'percent'  },
+                ],
+                rows: clientTypes,
+              }]}
+            />
+          </div>
         </div>
         <div className="overflow-y-auto flex-1">
           {clientTypes.length === 0 && (
@@ -223,8 +244,27 @@ export default function ClientsPage({ rows }) {
         ) : (
           <>
             <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex-shrink-0">
-              <p className="text-[11px] font-semibold text-slate-700 truncate">{selectedType}</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">{clients.length} clientes · ordenado por faturamento</p>
+              <div className="flex items-start justify-between gap-1">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold text-slate-700 truncate">{selectedType}</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">{clients.length} clientes · ordenado por faturamento</p>
+                </div>
+                <ExportButton
+                  title={`Clientes — ${selectedType}`}
+                  slug="clientes-lista"
+                  sections={[{
+                    title: `Clientes — ${selectedType}`,
+                    columns: [
+                      { key: 'name',         label: 'Cliente',     type: 'text'     },
+                      { key: 'saleCount',    label: 'Nº Vendas',   type: 'number'   },
+                      { key: 'revenue',      label: 'Faturamento', type: 'currency', total: true },
+                      { key: 'profitLiquido',label: 'Líquido',     type: 'currency', total: true },
+                      { key: 'rentPct',      label: '% Rent.',     type: 'percent'  },
+                    ],
+                    rows: clients,
+                  }]}
+                />
+              </div>
             </div>
             <div className="overflow-y-auto flex-1">
               {clients.map((c, i) => {
@@ -291,6 +331,27 @@ export default function ClientsPage({ rows }) {
                     {clientKPIs && ` · ${clientKPIs.uniqueSales} venda${clientKPIs.uniqueSales !== 1 ? 's' : ''}`}
                   </p>
                 </div>
+                {selectedClient && services.length > 0 && (
+                  <ExportButton
+                    title={`Perfil — ${selectedClient}`}
+                    slug="clientes-perfil-servicos"
+                    sections={[{
+                      title: `Perfil de Serviços — ${selectedClient}`,
+                      columns: [
+                        { key: 'name',         label: 'Serviço',     type: 'text'     },
+                        { key: 'segmentLabel', label: 'Segmento',    type: 'text'     },
+                        { key: 'count',        label: 'Ocorrências', type: 'number'   },
+                        { key: 'revenue',      label: 'Faturamento', type: 'currency', total: true },
+                        { key: 'revPct',       label: '% Fat.',      type: 'percent'  },
+                        { key: 'rentPct',      label: 'Margem',      type: 'percent'  },
+                      ],
+                      rows: services.map(s => ({
+                        ...s,
+                        segmentLabel: SEGMENT_CFG[s.segment]?.label || s.segment || '—',
+                      })),
+                    }]}
+                  />
+                )}
                 {clientKPIs && (
                   <div className="flex gap-5 flex-shrink-0">
                     <div className="text-right">
@@ -430,6 +491,7 @@ export default function ClientsPage({ rows }) {
               )}
             </p>
           </div>
+          <div className="flex items-center gap-2">
           <div className="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-medium">
             {[30, 60, 90, 120].map((d, i) => (
               <button
@@ -447,6 +509,26 @@ export default function ClientsPage({ rows }) {
                 {d}d
               </button>
             ))}
+          </div>
+          <ExportButton
+            title={`Inatividade — ${inactiveDays} dias`}
+            slug="clientes-inativos"
+            sections={[{
+              title: `Clientes Inativos (${inactiveDays} dias)`,
+              columns: [
+                { key: 'name',       label: 'Cliente',       type: 'text'     },
+                { key: 'clientType', label: 'Tipo (REDE)',    type: 'text'     },
+                { key: 'lastDateFmt',label: 'Última Compra', type: 'text'     },
+                { key: 'daysSince',  label: 'Dias Inativo',  type: 'number'   },
+                { key: 'revenue',    label: 'Fat. no Período',type: 'currency', total: true },
+                { key: 'saleCount',  label: 'Vendas',        type: 'number'   },
+              ],
+              rows: inactiveClients.map(c => ({
+                ...c,
+                lastDateFmt: c.lastDate ? c.lastDate.toLocaleDateString('pt-BR') : '—',
+              })),
+            }]}
+          />
           </div>
         </div>
       </div>
