@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { abcCurve, groupByClientOrVendor } from '../utils/aggregations';
 import { BRLFULL, BRLk, PCTFMT } from '../utils/format';
+import { InfoTooltip } from '../components/InfoTooltip';
 import { ExportButton } from '../components/ExportButton';
 
 const PAGE_SIZE = 25;
@@ -39,6 +40,7 @@ export default function SalesPage({ rows }) {
   const topVendorsRef = useRef(null);
   const abcRef        = useRef(null);
 
+  const commercialRef = useRef(null);
   const topVendors = useMemo(() => {
     const map = {};
     for (const r of rows) {
@@ -61,6 +63,7 @@ export default function SalesPage({ rows }) {
   const abc        = useMemo(() => abcCurve(rows), [rows]);
   const sorted     = useMemo(() => [...rows].sort((a, b) => b.revenue - a.revenue), [rows]);
   const grouped    = useMemo(() => groupByClientOrVendor(rows, groupField), [rows, groupField]);
+  const commercial = useMemo(() => groupByClientOrVendor(rows, 'commercial'), [rows]);
 
   const pageCount = Math.ceil(sorted.length / PAGE_SIZE);
   const pageRows  = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -72,9 +75,10 @@ export default function SalesPage({ rows }) {
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
           <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
             <div>
-              <h2 className="text-sm font-semibold text-slate-700">
-                Top <span className="text-blue-600">{topN}</span> Emissores
-                {' — '}<span className="text-blue-600">{METRIC_CFG[topMetric].label}</span>
+              <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+                Top <span className="text-blue-600 mx-1">{topN}</span> Emissores
+                {' — '}<span className="text-blue-600 mx-1">{METRIC_CFG[topMetric].label}</span>
+                <InfoTooltip text="Ranking dos emissores (nomeemissor) pela métrica selecionada. Margem = Σlíquido ÷ Σfaturamento do emissor — nunca média de percentuais individuais, evitando distorção por itens pequenos." />
               </h2>
             </div>
             <div className="flex flex-wrap gap-2 items-center">
@@ -153,7 +157,10 @@ export default function SalesPage({ rows }) {
         {/* ABC Curve */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
           <div className="flex items-start justify-between gap-2 mb-1">
-            <h2 className="text-sm font-semibold text-slate-700">Curva ABC — Clientes por Faturamento</h2>
+            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+              Curva ABC — Clientes por Faturamento
+              <InfoTooltip text="Top 30 clientes por faturamento decrescente. A linha amarela é o % acumulado — quando cruza 80%, os clientes à esquerda formam a Classe A (poucos clientes, maior parte do faturamento). Parceto 80/20." />
+            </h2>
             <ExportButton
               title="Curva ABC — Clientes"
               slug="vendas-abc-clientes"
@@ -291,9 +298,10 @@ export default function SalesPage({ rows }) {
             const LABELS = { client: 'Clientes', vendor: 'Emissores', supplier: 'Fornecedores', product: 'Serviços' };
             const label  = LABELS[groupField] || groupField;
             return (
-              <h2 className="text-sm font-semibold text-slate-700">
-                Agrupamento por <span className="text-blue-600">{label}</span>
-                <span className="ml-2 text-slate-400 font-normal text-xs">
+              <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+                Agrupamento por <span className="text-blue-600 mx-1">{label}</span>
+                <InfoTooltip text="Cada linha agrega todos os itens do período para aquele agrupador. Pax: por Produto = soma de passageiros por item; por outros = passageiros únicos por venda (sem duplicar itens). % Rent. = Σlíquido ÷ Σfaturamento." />
+                <span className="ml-1 text-slate-400 font-normal text-xs">
                   ({grouped.length.toLocaleString('pt-BR')} {label.toLowerCase()})
                 </span>
               </h2>
@@ -443,6 +451,95 @@ export default function SalesPage({ rows }) {
           </table>
         </div>
       </div>
+
+      {/* Performance Comercial */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+            Performance Comercial
+            <InfoTooltip text="Agrupamento por responsável comercial (campo nomecomercial da API). Diferente do emissor (quem operou a venda), o comercial é o responsável estratégico pela conta — útil para avaliação de equipe comercial." />
+            <span className="ml-1 text-slate-400 font-normal text-xs">({commercial.length.toLocaleString('pt-BR')} comerciais)</span>
+          </h2>
+          <ExportButton
+            title="Performance Comercial"
+            slug="vendas-comercial"
+            chartRef={commercialRef}
+            sections={[{
+              title: 'Performance por Comercial',
+              columns: [
+                { key: 'name',          label: 'Comercial',   type: 'text'     },
+                { key: 'revenue',       label: 'Faturamento', type: 'currency', total: true },
+                { key: 'profitLiquido', label: 'Líquido',     type: 'currency', total: true },
+                { key: 'rentPct',       label: '% Rent.',     type: 'percent'  },
+                { key: 'uniquePassengers', label: 'Pax',      type: 'number'   },
+              ],
+              rows: commercial,
+            }]}
+          />
+        </div>
+        <p className="text-xs text-slate-400 mb-4">Ranking por responsável comercial (campo nomecomercial) — distinto do emissor operacional</p>
+        {commercial.length === 0 ? (
+          <p className="text-xs text-slate-400 py-10 text-center">Sem dados de comercial no período.</p>
+        ) : (
+          <div ref={commercialRef} className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-500 text-left">
+                  <th className="pb-2 pr-3 font-semibold">#</th>
+                  <th className="pb-2 pr-3 font-semibold">Comercial</th>
+                  <th className="pb-2 pr-3 font-semibold text-right">Faturamento</th>
+                  <th className="pb-2 pr-3 font-semibold text-right">Pax</th>
+                  <th className="pb-2 pr-3 font-semibold text-right">Líquido</th>
+                  <th className="pb-2 font-semibold text-right">% Rent</th>
+                </tr>
+              </thead>
+              <tbody>
+                {commercial.map((c, i) => {
+                  const isNeg  = c.profitLiquido < 0;
+                  const pctNeg = c.rentPct !== null && c.rentPct < 0;
+                  return (
+                    <tr key={c.name} className={`border-b border-slate-100 ${isNeg ? 'bg-red-50' : 'hover:bg-slate-50'}`}>
+                      <td className="py-2 pr-3 text-slate-400">{i + 1}</td>
+                      <td className="py-2 pr-3 font-medium text-slate-700 max-w-[16rem] truncate" title={c.name}>{c.name}</td>
+                      <td className="py-2 pr-3 text-right text-slate-700">{BRLFULL(c.revenue)}</td>
+                      <td className="py-2 pr-3 text-right text-slate-500">{c.uniquePassengers.toLocaleString('pt-BR')}</td>
+                      <td className={`py-2 pr-3 text-right font-semibold ${isNeg ? 'text-red-600' : 'text-emerald-700'}`}>
+                        {BRLFULL(c.profitLiquido)}
+                      </td>
+                      <td className={`py-2 text-right font-semibold tabular-nums ${pctNeg ? 'text-red-600' : 'text-emerald-700'}`}>
+                        {PCTFMT(c.rentPct)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              {commercial.length > 0 && (() => {
+                const totRev = commercial.reduce((s, c) => s + c.revenue, 0);
+                const totLiq = commercial.reduce((s, c) => s + c.profitLiquido, 0);
+                const totPax = commercial.reduce((s, c) => s + c.uniquePassengers, 0);
+                const totPct = totRev !== 0 ? (totLiq / totRev) * 100 : null;
+                return (
+                  <tfoot>
+                    <tr className="border-t-2 border-slate-300 font-semibold text-slate-700 bg-slate-50">
+                      <td className="pt-2 pr-3" />
+                      <td className="pt-2 pr-3 text-xs">TOTAL</td>
+                      <td className="pt-2 pr-3 text-right text-xs">{BRLFULL(totRev)}</td>
+                      <td className="pt-2 pr-3 text-right text-xs">{totPax.toLocaleString('pt-BR')}</td>
+                      <td className={`pt-2 pr-3 text-right text-xs ${totLiq < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                        {BRLFULL(totLiq)}
+                      </td>
+                      <td className={`pt-2 text-right text-xs ${totPct !== null && totPct < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                        {PCTFMT(totPct)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                );
+              })()}
+            </table>
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }

@@ -3,8 +3,10 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, PieChart, Pie, Cell,
 } from 'recharts';
-import { groupByClientOrVendor, topNByField } from '../utils/aggregations';
+import { groupByClientOrVendor, topNByField, revenuePerNight, itemsPerSale } from '../utils/aggregations';
 import { BRLFULL, BRLk, PCTFMT, SEGMENT_CFG } from '../utils/format';
+import { KPICard } from '../components/KPICard';
+import { InfoTooltip } from '../components/InfoTooltip';
 import { ExportButton } from '../components/ExportButton';
 
 const PAGE_SIZE = 30;
@@ -12,8 +14,9 @@ const PAGE_SIZE = 30;
 export default function ServicesPage({ rows }) {
   const [prodPage, setProdPage] = useState(0);
   useEffect(() => { setProdPage(0); }, [rows]);
-  const segMixRef  = useRef(null);
-  const top20Ref   = useRef(null);
+  const segMixRef    = useRef(null);
+  const top20Ref     = useRef(null);
+  const efficiencyRef = useRef(null);
 
   const segmentData = useMemo(() => {
     const groups = groupByClientOrVendor(rows, 'segment').filter(s => s.revenue > 0);
@@ -24,8 +27,10 @@ export default function ServicesPage({ rows }) {
     }));
   }, [rows]);
 
-  const topProducts  = useMemo(() => topNByField(rows, 'product', 'revenue', 20), [rows]);
-  const allProducts  = useMemo(() => groupByClientOrVendor(rows, 'product'), [rows]);
+  const topProducts    = useMemo(() => topNByField(rows, 'product', 'revenue', 20), [rows]);
+  const allProducts    = useMemo(() => groupByClientOrVendor(rows, 'product'), [rows]);
+  const revPerNight    = useMemo(() => revenuePerNight(rows), [rows]);
+  const itemsData      = useMemo(() => itemsPerSale(rows), [rows]);
 
   const pageCount   = Math.ceil(allProducts.length / PAGE_SIZE);
   const prodRows    = allProducts.slice(prodPage * PAGE_SIZE, (prodPage + 1) * PAGE_SIZE);
@@ -39,7 +44,10 @@ export default function ServicesPage({ rows }) {
         {/* Donut */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
           <div className="flex items-start justify-between gap-2 mb-1">
-            <h2 className="text-sm font-semibold text-slate-700">Mix por Segmento — Faturamento</h2>
+            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+              Mix por Segmento — Faturamento
+              <InfoTooltip text="Composição do faturamento por categoria de serviço (campo dsCateg). % = faturamento do segmento ÷ faturamento total × 100. A % de rentabilidade usa Σlíquido ÷ Σfaturamento do segmento." />
+            </h2>
             <ExportButton
               title="Mix por Segmento — Faturamento"
               slug="servicos-mix-segmento"
@@ -168,6 +176,90 @@ export default function ServicesPage({ rows }) {
             </table>
           </div>
         </div>
+      </div>
+
+      {/* Eficiência por Estadia */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+            Eficiência por Estadia
+            <InfoTooltip text="Receita/Noite = Σfaturamento ÷ Σnum_noites por segmento (apenas itens com num_noites > 0). Itens/Venda = média de seqId distintos por ID de venda — um seqId diferente = um serviço adicional na mesma operação (cross-sell)." />
+          </h2>
+          <ExportButton
+            title="Eficiência por Estadia"
+            slug="servicos-eficiencia"
+            chartRef={efficiencyRef}
+            sections={[{
+              title: 'Receita por Noite — por Segmento',
+              chartRef: efficiencyRef,
+              columns: [
+                { key: 'segment',     label: 'Segmento',        type: 'text'     },
+                { key: 'revenue',     label: 'Faturamento',     type: 'currency', total: true },
+                { key: 'nights',      label: 'Noites',          type: 'number'   },
+                { key: 'revPerNight', label: 'Receita/Noite',   type: 'currency' },
+              ],
+              rows: revPerNight,
+            }]}
+          />
+        </div>
+        <p className="text-xs text-slate-400 mb-4">
+          Receita por noite por segmento (itens com num_noites preenchido) · média de itens por venda = indicador de cross-sell
+        </p>
+        {revPerNight.length === 0 && itemsData.total === 0 ? (
+          <p className="text-xs text-slate-400 py-10 text-center">Sem dados de noites / itens por venda no período.</p>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            <div ref={efficiencyRef}>
+              {revPerNight.length === 0 ? (
+                <p className="text-xs text-slate-400 py-8 text-center">Sem dados de hospedagem no período.</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={revPerNight} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                    <XAxis type="number" tickFormatter={BRLk} tick={{ fontSize: 10 }} />
+                    <YAxis type="category" dataKey="segment" tick={{ fontSize: 10 }} width={80} />
+                    <Tooltip
+                      formatter={(v, name) => [name === 'Receita/Noite' ? BRLFULL(v) : v, name]}
+                      labelStyle={{ fontWeight: 600 }}
+                    />
+                    <Bar dataKey="revPerNight" name="Receita/Noite" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+            <div className="space-y-3">
+              <KPICard
+                title="Média de itens por venda"
+                value={itemsData.avg}
+                format="number"
+                color="indigo"
+                sub={`em ${(itemsData.total || 0).toLocaleString('pt-BR')} vendas com itens`}
+              />
+              {itemsData.dist && (
+                <div className="space-y-2">
+                  {itemsData.dist.map(d => {
+                    const total = itemsData.total || 1;
+                    const pct = (d.count / total) * 100;
+                    return (
+                      <div key={d.label} className="text-xs">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-slate-600 font-medium">{d.label}</span>
+                          <div className="flex gap-3 text-slate-500 tabular-nums">
+                            <span>{d.count.toLocaleString('pt-BR')} vendas</span>
+                            <span className="w-10 text-right">{pct.toFixed(1)}%</span>
+                          </div>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-1.5">
+                          <div className="h-1.5 rounded-full bg-indigo-400" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Top 20 Products bar chart */}

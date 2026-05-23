@@ -1,14 +1,18 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import {
   ResponsiveContainer, ComposedChart, BarChart, Bar, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  PieChart, Pie, Cell,
+  PieChart, Pie, Cell, ReferenceArea,
 } from 'recharts';
-import { TrendingUp, DollarSign, Percent, Users, ShoppingCart, CreditCard } from 'lucide-react';
+import { TrendingUp, DollarSign, Percent, Users, ShoppingCart, CreditCard, ChevronLeft, ChevronRight } from 'lucide-react';
 import { KPICard } from '../components/KPICard';
+import { InfoTooltip } from '../components/InfoTooltip';
 import { ExportButton } from '../components/ExportButton';
 import { calcKPIs, groupByMonth, topNByField, groupByClientOrVendor, groupByMonthAndField } from '../utils/aggregations';
 import { BRLFULL, BRLk, SEGMENT_CFG } from '../utils/format';
+import { useExportContext } from '../contexts/ExportContext';
+import { useYearData } from '../hooks/useYearData';
+import { PaxAuditModal } from '../components/PaxAuditModal';
 
 const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
@@ -55,12 +59,46 @@ function SegmentTooltip({ active, payload, label }) {
   );
 }
 
+function YearNav({ selectedYear, filterYear, loading, onPrev, onNext, onReset }) {
+  return (
+    <div className="flex items-center gap-1">
+      {loading && <span className="text-[10px] text-slate-400 mr-1">carregando...</span>}
+      {selectedYear !== filterYear && (
+        <button
+          onClick={onReset}
+          className="text-[10px] text-blue-500 hover:text-blue-700 mr-1 underline underline-offset-2"
+        >
+          Período filtrado
+        </button>
+      )}
+      <button onClick={onPrev} className="p-0.5 rounded hover:bg-slate-100 text-slate-500" title="Ano anterior">
+        <ChevronLeft size={13} />
+      </button>
+      <span className="text-xs font-semibold text-slate-700 tabular-nums w-10 text-center">{selectedYear}</span>
+      <button onClick={onNext} className="p-0.5 rounded hover:bg-slate-100 text-slate-500" title="Próximo ano">
+        <ChevronRight size={13} />
+      </button>
+    </div>
+  );
+}
+
 export default function ExecutivePage({ rows }) {
   const timelineRef      = useRef(null);
   const segTimelineRef   = useRef(null);
   const topSuppliersRef  = useRef(null);
   const segMixRef        = useRef(null);
 
+  // Year navigation
+  const { startDate, endDate, qualPeriodo, nSistema } = useExportContext();
+  const filterYear = startDate
+    ? new Date(`${startDate}T12:00:00`).getFullYear()
+    : new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState(filterYear);
+  useEffect(() => setSelectedYear(filterYear), [filterYear]);
+
+  const { rows: yearRows, loading: yearLoading } = useYearData({ year: selectedYear, qualPeriodo, nSistema });
+
+  // Filtered-period computations (KPIs, exports)
   const kpis         = useMemo(() => calcKPIs(rows), [rows]);
   const timeline     = useMemo(() =>
     groupByMonth(rows).map(m => ({
@@ -86,6 +124,49 @@ export default function ExecutivePage({ rows }) {
     };
   }, [rows]);
 
+  // Full-year computations (charts)
+  const monthKeys = useMemo(() =>
+    Array.from({ length: 12 }, (_, i) => `${selectedYear}-${String(i + 1).padStart(2, '0')}`),
+  [selectedYear]);
+
+  const yearTimeline = useMemo(() => {
+    const map = {};
+    groupByMonth(yearRows).forEach(m => { map[m.month] = m; });
+    return monthKeys.map(key => {
+      const m = map[key] || { month: key, revenue: 0, profitLiquido: 0, passengers: 0 };
+      return {
+        ...m,
+        label: fmtMonth(key),
+        marginPct: m.revenue !== 0 ? (m.profitLiquido / m.revenue) * 100 : 0,
+      };
+    });
+  }, [yearRows, monthKeys]);
+
+  const yearSegmentTimeline = useMemo(() => {
+    const { data, keys } = groupByMonthAndField(yearRows, 'segment');
+    const monthMap = {};
+    data.forEach(m => { monthMap[m.month] = m; });
+    const filledData = monthKeys.map(key => {
+      const m = monthMap[key] || { month: key };
+      const entry = { ...m, label: fmtMonth(key) };
+      keys.forEach(k => { if (entry[k] === undefined) entry[k] = 0; });
+      return entry;
+    });
+    return { data: filledData, segments: keys };
+  }, [yearRows, monthKeys]);
+
+  // Highlight filter period on the year charts
+  const highlightLabels = useMemo(() => {
+    if (selectedYear !== filterYear || !startDate || !endDate) return null;
+    const start = new Date(`${startDate}T12:00:00`);
+    const end   = new Date(`${endDate}T12:00:00`);
+    const x1 = fmtMonth(`${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`);
+    const x2 = fmtMonth(`${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}`);
+    return { x1, x2 };
+  }, [selectedYear, filterYear, startDate, endDate]);
+
+  const [paxAuditOpen, setPaxAuditOpen] = useState(false);
+
   const kpiColor = kpis.profitLiquido >= 0 ? 'green' : 'red';
   const segTotal = segmentData.reduce((s, x) => s + x.revenue, 0);
 
@@ -98,17 +179,33 @@ export default function ExecutivePage({ rows }) {
     { label: 'Nº Vendas',         value: kpis.uniqueSales,      type: 'number'   },
   ];
 
+  const yearNavProps = {
+    selectedYear,
+    filterYear,
+    loading: yearLoading,
+    onPrev:  () => setSelectedYear(y => y - 1),
+    onNext:  () => setSelectedYear(y => y + 1),
+    onReset: () => setSelectedYear(filterYear),
+  };
+
   return (
     <div className="space-y-6">
       {/* KPI Cards */}
       <div className="relative">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <KPICard title="Faturamento Total"  value={kpis.revenue}           format="currency" icon={DollarSign}  color="blue"    />
-          <KPICard title="Líquido"            value={kpis.profitLiquido}     format="currency" icon={TrendingUp}   color={kpiColor} />
-          <KPICard title="% Rentabilidade"    value={kpis.margin}            format="percent"  icon={Percent}      color="amber"   />
-          <KPICard title="Passageiros"        value={kpis.uniquePassengers}  format="number"   icon={Users}        color="slate"   sub="por venda única" />
-          <KPICard title="Ticket Médio"       value={kpis.ticketMedio}       format="currency" icon={CreditCard}   color="indigo"  sub="receita / pax" />
-          <KPICard title="Nº Vendas"          value={kpis.uniqueSales}       format="number"   icon={ShoppingCart} color="slate"   sub="vendas únicas" />
+          <KPICard title="Faturamento Total"  value={kpis.revenue}           format="currency" icon={DollarSign}  color="blue"
+            tooltip="Soma de total_vendas de todos os itens do período. Valor bruto faturado antes de qualquer dedução de custo ou comissão." />
+          <KPICard title="Líquido"            value={kpis.profitLiquido}     format="currency" icon={TrendingUp}   color={kpiColor}
+            tooltip="Σ(total_liquido + total_descontos). O campo total_descontos é somado de volta pois a API ONASYS aplica uma dedução dupla nesse campo — corrigido para bater com o painel web da ONASYS." />
+          <KPICard title="% Rentabilidade"    value={kpis.margin}            format="percent"  icon={Percent}      color="amber"
+            tooltip="Lucro Líquido ÷ Faturamento × 100. Calculada sobre os totais somados (nunca média de percentuais individuais), evitando distorção por itens de tamanhos muito diferentes." />
+          <KPICard title="Passageiros"        value={kpis.uniquePassengers}  format="number"   icon={Users}        color="slate"   sub="por venda única"
+            tooltip="Passageiros únicos por venda. Quando uma venda tem vários itens (ex: Transfer + Hotel), usa-se o maior num_pax registrado para o ID de venda — evita contar o mesmo grupo de passageiros múltiplas vezes."
+            onClick={() => setPaxAuditOpen(true)} />
+          <KPICard title="Ticket Médio"       value={kpis.ticketMedio}       format="currency" icon={CreditCard}   color="indigo"  sub="receita / pax"
+            tooltip="Faturamento Total ÷ Passageiros únicos. Indica o valor médio recebido por passageiro no período. Usa a contagem de pax únicos (sem duplicação por itens da mesma venda)." />
+          <KPICard title="Nº Vendas"          value={kpis.uniqueSales}       format="number"   icon={ShoppingCart} color="slate"   sub="vendas únicas"
+            tooltip="Contagem de IDs de venda únicos (campo venda da API). Um ID representa uma operação comercial completa que pode conter vários itens de serviço (Transfer, Hotel, Ingresso etc.)." />
         </div>
         <div className="absolute top-0 right-0">
           <ExportButton
@@ -122,88 +219,129 @@ export default function ExecutivePage({ rows }) {
       {/* Monthly Revenue + Margin combo */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
         <div className="flex items-start justify-between gap-2 mb-1">
-          <h2 className="text-sm font-semibold text-slate-700">Evolução Mensal — Faturamento & Margem</h2>
-          <ExportButton
-            title="Evolução Mensal — Faturamento & Margem"
-            slug="executivo-evolucao-mensal"
-            chartRef={timelineRef}
-            sections={[{
-              title: 'Evolução Mensal',
-              chartRef: timelineRef,
-              columns: [
-                { key: 'label',        label: 'Mês',          type: 'text'     },
-                { key: 'revenue',      label: 'Faturamento',  type: 'currency', total: true },
-                { key: 'profitLiquido',label: 'Líquido',      type: 'currency', total: true },
-                { key: 'marginPct',    label: '% Margem',     type: 'percent'  },
-              ],
-              rows: timeline,
-            }]}
-          />
+          <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+            Evolução Mensal — Faturamento &amp; Margem
+            <InfoTooltip text="Barras = faturamento bruto por mês. Linha verde = lucro líquido. Linha pontilhada = % margem (eixo direito). Agrupado pela data de emissão (ou realizado, conforme seleção de período). A área destacada em azul representa o intervalo de datas do filtro ativo." />
+          </h2>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <YearNav {...yearNavProps} />
+            <ExportButton
+              title="Evolução Mensal — Faturamento & Margem"
+              slug="executivo-evolucao-mensal"
+              chartRef={timelineRef}
+              sections={[{
+                title: 'Evolução Mensal',
+                chartRef: timelineRef,
+                columns: [
+                  { key: 'label',        label: 'Mês',          type: 'text'     },
+                  { key: 'revenue',      label: 'Faturamento',  type: 'currency', total: true },
+                  { key: 'profitLiquido',label: 'Líquido',      type: 'currency', total: true },
+                  { key: 'marginPct',    label: '% Margem',     type: 'percent'  },
+                ],
+                rows: timeline,
+              }]}
+            />
+          </div>
         </div>
-        <p className="text-xs text-slate-400 mb-4">Barras = Faturamento · Linha verde = Líquido · Linha pontilhada = % Margem (eixo direito)</p>
-        {timeline.length === 0 ? (
-          <p className="text-xs text-slate-400 py-10 text-center">Sem dados no período.</p>
-        ) : (
-          <div ref={timelineRef}>
+        <p className="text-xs text-slate-400 mb-4">
+          Barras = Faturamento · Linha verde = Líquido · Linha pontilhada = % Margem (eixo direito)
+          {highlightLabels && (
+            <span className="ml-2 text-blue-400">· Área azul = período filtrado ({highlightLabels.x1}–{highlightLabels.x2})</span>
+          )}
+        </p>
+        <div ref={timelineRef}>
           <ResponsiveContainer width="100%" height={280}>
-            <ComposedChart data={timeline} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
+            <ComposedChart data={yearTimeline} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} />
               <YAxis yAxisId="money" tickFormatter={BRLk} tick={{ fontSize: 11 }} width={62} />
               <YAxis yAxisId="pct" orientation="right" tickFormatter={v => `${v.toFixed(0)}%`} tick={{ fontSize: 11 }} width={38} />
               <Tooltip content={<MonthTooltip />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar      yAxisId="money" dataKey="revenue"      name="Faturamento" fill="#3b82f6" opacity={0.85} radius={[3,3,0,0]} />
-              <Line     yAxisId="money" dataKey="profitLiquido" name="Líquido"    stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} type="monotone" />
-              <Line     yAxisId="pct"   dataKey="marginPct"     name="% Margem"   stroke="#f59e0b" strokeWidth={2} dot={false} type="monotone" strokeDasharray="5 3" />
+              {highlightLabels && (
+                <ReferenceArea
+                  yAxisId="money"
+                  x1={highlightLabels.x1}
+                  x2={highlightLabels.x2}
+                  fill="#3b82f6"
+                  fillOpacity={0.08}
+                  stroke="#3b82f6"
+                  strokeOpacity={0.25}
+                  strokeWidth={1}
+                />
+              )}
+              <Bar      yAxisId="money" dataKey="revenue"       name="Faturamento" fill="#3b82f6" opacity={0.85} radius={[3,3,0,0]} />
+              <Line     yAxisId="money" dataKey="profitLiquido"  name="Líquido"    stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} type="monotone" />
+              <Line     yAxisId="pct"   dataKey="marginPct"      name="% Margem"   stroke="#f59e0b" strokeWidth={2} dot={false} type="monotone" strokeDasharray="5 3" />
             </ComposedChart>
           </ResponsiveContainer>
-          </div>
-        )}
+        </div>
       </div>
 
-      {/* Segment stacked timeline — only when multi-month */}
-      {segmentTimeline.data.length > 1 && (
+      {/* Segment stacked timeline */}
+      {yearSegmentTimeline.segments.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
           <div className="flex items-start justify-between gap-2 mb-1">
-            <h2 className="text-sm font-semibold text-slate-700">Faturamento por Segmento — Evolução Mensal</h2>
-            <ExportButton
-              title="Faturamento por Segmento — Evolução Mensal"
-              slug="executivo-seg-timeline"
-              chartRef={segTimelineRef}
-              sections={[{
-                title: 'Faturamento por Segmento',
-                chartRef: segTimelineRef,
-                columns: [
-                  { key: 'label', label: 'Mês', type: 'text' },
-                  ...segmentTimeline.segments.map(seg => ({
-                    key: seg, label: SEGMENT_CFG[seg]?.label || seg, type: 'currency', total: true,
-                  })),
-                ],
-                rows: segmentTimeline.data,
-              }]}
-            />
+            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+              Faturamento por Segmento — Evolução Mensal
+              <InfoTooltip text="Faturamento mensal empilhado por categoria de serviço (campo dsCateg da API). Permite ver quais segmentos crescem ou encolhem sua participação ao longo do tempo. A área destacada em azul representa o intervalo de datas do filtro ativo." />
+            </h2>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <YearNav {...yearNavProps} />
+              <ExportButton
+                title="Faturamento por Segmento — Evolução Mensal"
+                slug="executivo-seg-timeline"
+                chartRef={segTimelineRef}
+                sections={[{
+                  title: 'Faturamento por Segmento',
+                  chartRef: segTimelineRef,
+                  columns: [
+                    { key: 'label', label: 'Mês', type: 'text' },
+                    ...segmentTimeline.segments.map(seg => ({
+                      key: seg, label: SEGMENT_CFG[seg]?.label || seg, type: 'currency', total: true,
+                    })),
+                  ],
+                  rows: segmentTimeline.data,
+                }]}
+              />
+            </div>
           </div>
-          <p className="text-xs text-slate-400 mb-4">Composição mensal do faturamento por categoria de serviço</p>
+          <p className="text-xs text-slate-400 mb-4">
+            Composição mensal do faturamento por categoria de serviço
+            {highlightLabels && (
+              <span className="ml-2 text-blue-400">· Área azul = período filtrado ({highlightLabels.x1}–{highlightLabels.x2})</span>
+            )}
+          </p>
           <div ref={segTimelineRef}>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={segmentTimeline.data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-              <YAxis tickFormatter={BRLk} tick={{ fontSize: 11 }} width={62} />
-              <Tooltip content={<SegmentTooltip />} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              {segmentTimeline.segments.map(seg => (
-                <Bar
-                  key={seg}
-                  dataKey={seg}
-                  name={SEGMENT_CFG[seg]?.label || seg}
-                  stackId="a"
-                  fill={SEGMENT_CFG[seg]?.color || '#94a3b8'}
-                />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={yearSegmentTimeline.data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis tickFormatter={BRLk} tick={{ fontSize: 11 }} width={62} />
+                <Tooltip content={<SegmentTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                {highlightLabels && (
+                  <ReferenceArea
+                    x1={highlightLabels.x1}
+                    x2={highlightLabels.x2}
+                    fill="#3b82f6"
+                    fillOpacity={0.08}
+                    stroke="#3b82f6"
+                    strokeOpacity={0.25}
+                    strokeWidth={1}
+                  />
+                )}
+                {yearSegmentTimeline.segments.map(seg => (
+                  <Bar
+                    key={seg}
+                    dataKey={seg}
+                    name={SEGMENT_CFG[seg]?.label || seg}
+                    stackId="a"
+                    fill={SEGMENT_CFG[seg]?.color || '#94a3b8'}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
       )}
@@ -212,7 +350,10 @@ export default function ExecutivePage({ rows }) {
         {/* Top 10 Suppliers by profit */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
           <div className="flex items-start justify-between gap-2 mb-4">
-            <h2 className="text-sm font-semibold text-slate-700">Top 10 Fornecedores — Lucro Líquido</h2>
+            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+              Top 10 Fornecedores — Lucro Líquido
+              <InfoTooltip text="Ranking dos 10 fornecedores com maior Lucro Líquido (Σtotal_liquido + Σtotal_descontos). Um fornecedor de alto faturamento com margem baixa pode aparecer abaixo de fornecedores menores e mais rentáveis." />
+            </h2>
             <ExportButton
               title="Top 10 Fornecedores — Lucro Líquido"
               slug="executivo-top-fornecedores"
@@ -234,15 +375,15 @@ export default function ExecutivePage({ rows }) {
             <p className="text-xs text-slate-400 py-10 text-center">Sem dados.</p>
           ) : (
             <div ref={topSuppliersRef}>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={topSuppliers} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                <XAxis type="number" tickFormatter={BRLk} tick={{ fontSize: 10 }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={130} />
-                <Tooltip formatter={v => [BRLFULL(v), 'Lucro Líquido']} />
-                <Bar dataKey="value" name="Lucro Líquido" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={topSuppliers} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                  <XAxis type="number" tickFormatter={BRLk} tick={{ fontSize: 10 }} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={130} />
+                  <Tooltip formatter={v => [BRLFULL(v), 'Lucro Líquido']} />
+                  <Bar dataKey="value" name="Lucro Líquido" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           )}
         </div>
@@ -250,7 +391,10 @@ export default function ExecutivePage({ rows }) {
         {/* Segment Mix */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
           <div className="flex items-start justify-between gap-2 mb-4">
-            <h2 className="text-sm font-semibold text-slate-700">Mix por Segmento — Faturamento</h2>
+            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+              Mix por Segmento — Faturamento
+              <InfoTooltip text="Participação percentual de cada categoria de serviço no faturamento total. Calculada como: receita do segmento ÷ receita total × 100. Agrupado pelo campo dsCateg da API." />
+            </h2>
             <ExportButton
               title="Mix por Segmento — Faturamento"
               slug="executivo-mix-segmento"
@@ -306,6 +450,10 @@ export default function ExecutivePage({ rows }) {
           )}
         </div>
       </div>
+
+      {paxAuditOpen && (
+        <PaxAuditModal rows={rows} onClose={() => setPaxAuditOpen(false)} />
+      )}
     </div>
   );
 }

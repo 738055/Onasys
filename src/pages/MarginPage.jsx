@@ -2,10 +2,12 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import {
   ResponsiveContainer, ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
-  BarChart, Bar, Cell,
+  BarChart, Bar, Cell, LineChart, Line, Legend,
 } from 'recharts';
-import { scatterBySupplier } from '../utils/aggregations';
+import { scatterBySupplier, scatterByVendor } from '../utils/aggregations';
+import { supplierMarginTrend } from '../utils/supplierConcentration';
 import { BRLFULL, BRLk } from '../utils/format';
+import { InfoTooltip } from '../components/InfoTooltip';
 import { ExportButton } from '../components/ExportButton';
 
 const PAGE_SIZE = 20;
@@ -48,10 +50,14 @@ function DistTooltip({ active, payload }) {
 export default function MarginPage({ rows }) {
   const [page, setPage] = useState(0);
   useEffect(() => { setPage(0); }, [rows]);
-  const distRef    = useRef(null);
-  const scatterRef = useRef(null);
+  const distRef        = useRef(null);
+  const scatterRef     = useRef(null);
+  const vendorScatRef  = useRef(null);
+  const trendRef       = useRef(null);
 
-  const scatter = useMemo(() => scatterBySupplier(rows), [rows]);
+  const scatter      = useMemo(() => scatterBySupplier(rows), [rows]);
+  const vendorScatter = useMemo(() => scatterByVendor(rows),   [rows]);
+  const trendData    = useMemo(() => supplierMarginTrend(rows, 10), [rows]);
   const losses  = useMemo(() => rows.filter(r => r.profitLiquido < 0).sort((a, b) => a.profitLiquido - b.profitLiquido), [rows]);
 
   const totalPrejuizo = useMemo(() => losses.reduce((s, r) => s + r.profitLiquido, 0), [losses]);
@@ -82,12 +88,18 @@ export default function MarginPage({ rows }) {
       {/* KPI summary strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-red-50 border border-red-100 rounded-xl p-4">
-          <p className="text-xs font-semibold uppercase tracking-widest text-red-700 opacity-70">Total Prejuízo</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-red-700 opacity-70 flex items-center gap-0.5">
+            Total Prejuízo
+            <InfoTooltip text="Soma de todos os Lucros Líquidos negativos do período. Cada item de venda é analisado individualmente — um fornecedor pode ter margem positiva no agregado mas ter itens negativos pontuais." />
+          </p>
           <p className="mt-2 text-xl font-bold text-red-800 tabular-nums">{BRLFULL(totalPrejuizo)}</p>
           <p className="mt-0.5 text-xs text-red-600 opacity-60">soma do período</p>
         </div>
         <div className="bg-red-50 border border-red-100 rounded-xl p-4">
-          <p className="text-xs font-semibold uppercase tracking-widest text-red-700 opacity-70">Itens Negativos</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-red-700 opacity-70 flex items-center gap-0.5">
+            Itens Negativos
+            <InfoTooltip text="Contagem de linhas onde (total_liquido + total_descontos) &lt; 0, expressa como % do total de itens no período. Um item = uma linha da API (um serviço dentro de uma venda)." />
+          </p>
           <p className="mt-2 text-xl font-bold text-red-800 tabular-nums">{losses.length.toLocaleString('pt-BR')}</p>
           <p className="mt-0.5 text-xs text-red-600 opacity-60">{pctNeg.toFixed(1)}% dos itens</p>
         </div>
@@ -106,7 +118,10 @@ export default function MarginPage({ rows }) {
       {/* Distribution histogram */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
         <div className="flex items-start justify-between gap-2 mb-1">
-          <h2 className="text-sm font-semibold text-slate-700">Distribuição de Margem por Item</h2>
+          <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+            Distribuição de Margem por Item
+            <InfoTooltip text="Para cada item: margem = (total_liquido + total_descontos) ÷ total_vendas × 100. Itens com total_vendas = 0 são excluídos. A distribuição conta quantos itens caem em cada faixa de rentabilidade." />
+          </h2>
           <ExportButton
             title="Distribuição de Margem por Item"
             slug="margens-distribuicao"
@@ -169,7 +184,10 @@ export default function MarginPage({ rows }) {
       {/* Scatter */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
         <div className="flex items-start justify-between gap-2 mb-1">
-          <h2 className="text-sm font-semibold text-slate-700">Margem vs Faturamento por Fornecedor</h2>
+          <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+            Margem vs Faturamento por Fornecedor
+            <InfoTooltip text="Cada ponto = 1 fornecedor. Margem = Σlíquido ÷ Σfaturamento × 100 (do fornecedor inteiro). Posição X = tamanho; posição Y = qualidade. Abaixo de 0% = prejuízo no período." />
+          </h2>
           <ExportButton
             title="Margem vs Faturamento por Fornecedor"
             slug="margens-scatter-fornecedor"
@@ -211,6 +229,73 @@ export default function MarginPage({ rows }) {
               <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="4 4" strokeWidth={1.5} />
               <Tooltip content={<ScatterTooltip />} />
               <Scatter data={scatter} fill="#3b82f6" opacity={0.65} />
+            </ScatterChart>
+          </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      {/* Vendor scatter */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+            Emissor × Margem × Volume
+            <InfoTooltip text="Scatter idêntico ao de fornecedores, mas agrupado por emissor (nomeemissor). Emissores no quadrante inferior direito = alto volume com margem baixa — candidatos a revisão de comissões ou capacitação." />
+          </h2>
+          <ExportButton
+            title="Emissor — Margem vs Faturamento"
+            slug="margens-scatter-emissor"
+            chartRef={vendorScatRef}
+            sections={[{
+              title: 'Scatter — Emissor × Margem',
+              chartRef: vendorScatRef,
+              columns: [
+                { key: 'name',          label: 'Emissor',     type: 'text'     },
+                { key: 'revenue',       label: 'Faturamento', type: 'currency', total: true },
+                { key: 'profitLiquido', label: 'Líquido',     type: 'currency', total: true },
+                { key: 'margin',        label: '% Margem',    type: 'percent'  },
+                { key: 'saleCount',     label: 'Nº Vendas',   type: 'number'   },
+              ],
+              rows: vendorScatter,
+            }]}
+          />
+        </div>
+        <p className="text-xs text-slate-400 mb-4">Cada ponto = 1 emissor. X = faturamento, Y = margem%. Abaixo da linha = prejuízo.</p>
+        {vendorScatter.length === 0 ? (
+          <p className="text-xs text-slate-400 py-10 text-center">Sem dados.</p>
+        ) : (
+          <div ref={vendorScatRef}>
+          <ResponsiveContainer width="100%" height={300}>
+            <ScatterChart margin={{ top: 10, right: 20, bottom: 30, left: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis
+                dataKey="revenue"
+                name="Faturamento"
+                tickFormatter={v => `R$${(v / 1000).toFixed(0)}k`}
+                tick={{ fontSize: 10 }}
+                label={{ value: 'Faturamento (R$)', position: 'insideBottom', offset: -15, fontSize: 11, fill: '#94a3b8' }}
+              />
+              <YAxis
+                dataKey="margin"
+                name="Margem %"
+                tick={{ fontSize: 10 }}
+                label={{ value: 'Margem %', angle: -90, position: 'insideLeft', offset: 10, fontSize: 11, fill: '#94a3b8' }}
+              />
+              <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="4 4" strokeWidth={1.5} />
+              <Tooltip content={({ active, payload }) => {
+                if (!active || !payload?.length) return null;
+                const d = payload[0].payload;
+                return (
+                  <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-lg text-xs">
+                    <p className="font-semibold text-slate-700 mb-1">{d.name}</p>
+                    <p>Faturamento: {BRLFULL(d.revenue)}</p>
+                    <p>Líquido: {BRLFULL(d.profitLiquido)}</p>
+                    <p>Margem: {d.margin.toFixed(2)}%</p>
+                    <p>Vendas: {d.saleCount.toLocaleString('pt-BR')}</p>
+                  </div>
+                );
+              }} />
+              <Scatter data={vendorScatter} fill="#10b981" opacity={0.65} />
             </ScatterChart>
           </ResponsiveContainer>
           </div>
@@ -308,6 +393,66 @@ export default function MarginPage({ rows }) {
           </>
         )}
       </div>
+
+      {/* Supplier margin trend */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+            Tendência de Margem por Fornecedor
+            <InfoTooltip text="Para os top 10 fornecedores por faturamento, calcula-se a margem mês a mês: Σlíquido ÷ Σfaturamento dentro de cada mês. Linhas com queda consistente indicam deterioração da relação comercial." />
+          </h2>
+          <ExportButton
+            title="Tendência de Margem por Fornecedor"
+            slug="margens-trend-fornecedor"
+            chartRef={trendRef}
+            sections={[{
+              title: 'Margem Mensal — Top Fornecedores',
+              chartRef: trendRef,
+              columns: [
+                { key: 'month', label: 'Mês', type: 'text' },
+                ...trendData.suppliers.map(sup => ({ key: sup, label: sup, type: 'percent' })),
+              ],
+              rows: trendData.data.map(row => {
+                const r = { month: row.month };
+                trendData.suppliers.forEach(s => { r[s] = row[s] ?? 0; });
+                return r;
+              }),
+            }]}
+          />
+        </div>
+        <p className="text-xs text-slate-400 mb-4">Evolução mensal da % de margem — top 10 fornecedores por faturamento</p>
+        {trendData.data.length === 0 ? (
+          <p className="text-xs text-slate-400 py-10 text-center">Sem dados suficientes para tendência mensal.</p>
+        ) : (
+          <div ref={trendRef}>
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={trendData.data} margin={{ top: 4, right: 24, bottom: 0, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+              <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v.toFixed(0)}%`} />
+              <Tooltip formatter={(v, name) => [v !== null ? `${Number(v).toFixed(2)}%` : '—', name]} />
+              <Legend wrapperStyle={{ fontSize: 10 }} />
+              {trendData.suppliers.map((sup, i) => {
+                const COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16','#ec4899','#6366f1'];
+                return (
+                  <Line
+                    key={sup}
+                    type="monotone"
+                    dataKey={sup}
+                    name={sup.length > 20 ? sup.slice(0, 18) + '…' : sup}
+                    stroke={COLORS[i % COLORS.length]}
+                    strokeWidth={1.5}
+                    dot={false}
+                    connectNulls
+                  />
+                );
+              })}
+            </LineChart>
+          </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }

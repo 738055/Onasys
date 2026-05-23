@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { groupByClientOrVendor } from '../utils/aggregations';
 import { BRLFULL, BRLk, PCTFMT } from '../utils/format';
+import { InfoTooltip } from '../components/InfoTooltip';
 import { ExportButton } from '../components/ExportButton';
 
 export default function GeoPage({ rows }) {
@@ -30,7 +31,10 @@ export default function GeoPage({ rows }) {
         {/* Region bar chart */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
           <div className="flex items-start justify-between gap-2 mb-1">
-            <h2 className="text-sm font-semibold text-slate-700">Faturamento por Região</h2>
+            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+            Faturamento por Região
+            <InfoTooltip text="Agrupamento pelo campo regiaobrasil da API. % Total = faturamento da região ÷ faturamento geral × 100. % Rent. = Σlíquido ÷ Σfaturamento da região × 100." />
+          </h2>
             <ExportButton
               title="Faturamento por Região"
               slug="geo-regioes"
@@ -136,7 +140,10 @@ export default function GeoPage({ rows }) {
         {/* States bar chart */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
           <div className="flex items-start justify-between gap-2 mb-1">
-            <h2 className="text-sm font-semibold text-slate-700">Top 15 Estados — Faturamento</h2>
+            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+              Top 15 Estados — Faturamento
+              <InfoTooltip text="Agrupamento pelo campo dsestado da API. O gráfico mostra os 15 maiores. A tabela ao lado lista TODOS os estados do período. % Rent. = Σlíquido ÷ Σfaturamento do estado × 100." />
+            </h2>
             <ExportButton
               title="Ranking de Estados"
               slug="geo-estados"

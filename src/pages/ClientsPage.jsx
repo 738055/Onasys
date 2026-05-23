@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { BRLFULL, BRLk, PCTFMT, SEGMENT_CFG } from '../utils/format';
+import { InfoTooltip } from '../components/InfoTooltip';
 import { ExportButton } from '../components/ExportButton';
 
 function IconUsers() {
@@ -182,7 +183,10 @@ export default function ClientsPage({ rows }) {
         <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex-shrink-0">
           <div className="flex items-start justify-between gap-1">
             <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Tipo de Cliente</p>
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-0.5">
+                Tipo de Cliente
+                <InfoTooltip text="Agrupamento pelo campo rede da API (tipo ou rede de agência). clientCount = nº de clientes distintos. saleCount = nº de vendas únicas. % Rent. = Σlíquido ÷ Σfaturamento do tipo × 100." />
+              </p>
               <p className="text-[10px] text-slate-400 mt-0.5">{clientTypes.length} tipos · campo REDE</p>
             </div>
             <ExportButton
@@ -479,7 +483,10 @@ export default function ClientsPage({ rows }) {
       <div className="px-5 py-4 border-b border-slate-200 bg-slate-50">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="text-sm font-bold text-slate-800">Monitoramento de Inatividade</h2>
+            <h2 className="text-sm font-bold text-slate-800 flex items-center gap-1">
+              Monitoramento de Inatividade
+              <InfoTooltip text="Clientes que aparecem no dataset do período mas cuja última data de emissão ficou há mais de N dias. Recência = dias entre a última venda e hoje. Clientes sem data de emissão também são listados." />
+            </h2>
             <p className="text-[10px] text-slate-400 mt-0.5">
               Clientes sem compras nos últimos{' '}
               <span className="font-semibold text-slate-600">{inactiveDays} dias</span>

@@ -10,15 +10,17 @@ import ServicesPage from './pages/ServicesPage';
 import GeoPage from './pages/GeoPage';
 import ComparativosPage from './pages/ComparativosPage';
 import ClientsPage from './pages/ClientsPage';
+import IntelligencePage from './pages/IntelligencePage';
 
 const TABS = [
-  { id: 'executive',   label: 'Visão Executiva' },
-  { id: 'margin',      label: 'Margens'         },
-  { id: 'sales',       label: 'Vendas'          },
-  { id: 'services',    label: 'Serviços'        },
-  { id: 'geo',         label: 'Regiões'         },
-  { id: 'comparativos', label: 'Comparativos'   },
-  { id: 'clientes',     label: 'Clientes'       },
+  { id: 'executive',    label: 'Visão Executiva' },
+  { id: 'margin',       label: 'Margens'         },
+  { id: 'sales',        label: 'Vendas'          },
+  { id: 'services',     label: 'Serviços'        },
+  { id: 'geo',          label: 'Regiões'         },
+  { id: 'comparativos', label: 'Comparativos'    },
+  { id: 'intelligence', label: 'Inteligência'    },
+  { id: 'clientes',     label: 'Clientes'        },
 ];
 
 function today() {
@@ -204,8 +206,9 @@ export default function App() {
             {activeTab === 'sales'        && <SalesPage        rows={rows} />}
             {activeTab === 'services'     && <ServicesPage     rows={rows} />}
             {activeTab === 'geo'          && <GeoPage          rows={rows} />}
-            {activeTab === 'comparativos' && <ComparativosPage />}
-            {activeTab === 'clientes'     && <ClientsPage rows={rows} />}
+            {activeTab === 'comparativos'  && <ComparativosPage />}
+            {activeTab === 'intelligence'  && <IntelligencePage rows={rows} />}
+            {activeTab === 'clientes'      && <ClientsPage rows={rows} />}
           </>
         )}
       </main>
