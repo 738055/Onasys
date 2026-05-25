@@ -155,36 +155,77 @@ export function scatterByVendor(rows) {
     }));
 }
 
+// Receita e margem por passageiro por segmento.
+// Usa passengers bruto por item (não deduplica por venda) — cada item de serviço
+// representa uma entrega independente para aquele grupo de pax.
+export function revenuePerPax(rows) {
+  const map = {};
+  for (const r of rows) {
+    if (!r.passengers || r.passengers <= 0) continue;
+    const key = r.segment || '(outro)';
+    if (!map[key]) map[key] = { segment: key, revenue: 0, profit: 0, passengers: 0 };
+    map[key].revenue    += r.revenue    || 0;
+    map[key].profit     += r.profit     || 0;
+    map[key].passengers += r.passengers || 0;
+  }
+  return Object.values(map)
+    .filter(s => s.passengers > 0)
+    .map(s => ({
+      ...s,
+      revPerPax:    s.revenue / s.passengers,
+      profitPerPax: s.profit  / s.passengers,
+      rentPct:      s.revenue > 0 ? (s.profit / s.revenue) * 100 : 0,
+    }))
+    .sort((a, b) => b.revPerPax - a.revPerPax);
+}
+
+// Receita e margem por noite de hospedagem, por segmento.
+// Somente itens com num_noites > 0 entram no cálculo.
 export function revenuePerNight(rows) {
   const map = {};
   for (const r of rows) {
     if (!r.nights || r.nights <= 0) continue;
     const key = r.segment || '(outro)';
-    if (!map[key]) map[key] = { segment: key, revenue: 0, nights: 0, profitLiquido: 0 };
-    map[key].revenue       += r.revenue       || 0;
-    map[key].nights        += r.nights;
-    map[key].profitLiquido += r.profitLiquido || 0;
+    if (!map[key]) map[key] = { segment: key, revenue: 0, profit: 0, nights: 0 };
+    map[key].revenue += r.revenue || 0;
+    map[key].profit  += r.profit  || 0;
+    map[key].nights  += r.nights;
   }
   return Object.values(map)
     .filter(s => s.nights > 0)
-    .map(s => ({ ...s, revPerNight: s.revenue / s.nights }))
+    .map(s => ({
+      ...s,
+      revPerNight:    s.revenue / s.nights,
+      profitPerNight: s.profit  / s.nights,
+      rentPct:        s.revenue > 0 ? (s.profit / s.revenue) * 100 : 0,
+    }))
     .sort((a, b) => b.revPerNight - a.revPerNight);
 }
 
+// Média de serviços por venda (indicador de cross-sell).
+// Usa seqId distintos quando preenchidos; fallback para contagem de linhas.
+// Garante que todas as vendas caem em algum bucket (% fecha em 100%).
 export function itemsPerSale(rows) {
-  const saleItems = {};
+  const saleSeqIds   = {};  // Set de seqIds por venda
+  const saleRowCount = {};  // Fallback: contagem de linhas por venda
   for (const r of rows) {
     if (!r.id) continue;
-    if (!saleItems[r.id]) saleItems[r.id] = new Set();
-    if (r.seqId) saleItems[r.id].add(r.seqId);
+    if (!saleSeqIds[r.id]) { saleSeqIds[r.id] = new Set(); saleRowCount[r.id] = 0; }
+    if (r.seqId) saleSeqIds[r.id].add(r.seqId);
+    saleRowCount[r.id]++;
   }
-  const counts = Object.values(saleItems).map(s => s.size);
-  if (!counts.length) return { avg: 0, dist: [] };
-  const avg = counts.reduce((s, v) => s + v, 0) / counts.length;
-  const dist = [
-    { label: '1 item',  count: counts.filter(c => c === 1).length },
-    { label: '2-3 itens', count: counts.filter(c => c >= 2 && c <= 3).length },
-    { label: '4+ itens',  count: counts.filter(c => c >= 4).length },
+  // Prefere seqId (mais preciso para cross-sell); usa linhas quando seqId vazio
+  const counts = Object.keys(saleSeqIds).map(id => {
+    const seqCount = saleSeqIds[id].size;
+    return seqCount > 0 ? seqCount : saleRowCount[id];
+  });
+  if (!counts.length) return { avg: 0, dist: [], total: 0 };
+  const total = counts.length;
+  const avg   = counts.reduce((s, v) => s + v, 0) / total;
+  const dist  = [
+    { label: '1 serviço',    count: counts.filter(c => c === 1).length },
+    { label: '2–3 serviços', count: counts.filter(c => c >= 2 && c <= 3).length },
+    { label: '4+ serviços',  count: counts.filter(c => c >= 4).length },
   ];
-  return { avg, dist, total: counts.length };
+  return { avg, dist, total };
 }

@@ -3,7 +3,40 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, PieChart, Pie, Cell,
 } from 'recharts';
-import { groupByClientOrVendor, topNByField, revenuePerNight, itemsPerSale } from '../utils/aggregations';
+
+// Tooltip customizado para gráfico Receita/Pax
+function PaxTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-lg text-xs min-w-[190px]">
+      <p className="font-semibold text-slate-700 mb-2">{d.label}</p>
+      <div className="space-y-0.5">
+        <div className="flex justify-between gap-4">
+          <span className="text-slate-500">Pax total</span>
+          <span className="font-semibold tabular-nums">{d.passengers.toLocaleString('pt-BR')}</span>
+        </div>
+        <div className="flex justify-between gap-4">
+          <span className="text-slate-500">Receita/Pax</span>
+          <span className="font-semibold tabular-nums">{d.revPerPax.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+        </div>
+        <div className="flex justify-between gap-4">
+          <span className="text-slate-500">Margem/Pax</span>
+          <span className={`font-semibold tabular-nums ${d.profitPerPax < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+            {d.profitPerPax.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          </span>
+        </div>
+        <div className="flex justify-between gap-4">
+          <span className="text-slate-500">% Rent.</span>
+          <span className={`font-semibold tabular-nums ${d.rentPct < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+            {d.rentPct.toFixed(2)}%
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+import { groupByClientOrVendor, topNByField, revenuePerPax, revenuePerNight, itemsPerSale } from '../utils/aggregations';
 import { BRLFULL, BRLk, PCTFMT, SEGMENT_CFG } from '../utils/format';
 import { KPICard } from '../components/KPICard';
 import { InfoTooltip } from '../components/InfoTooltip';
@@ -18,6 +51,9 @@ export default function ServicesPage({ rows }) {
   const top20Ref     = useRef(null);
   const efficiencyRef = useRef(null);
 
+  const revPerPaxRef  = useRef(null);
+  const hotelRef      = useRef(null);
+
   const segmentData = useMemo(() => {
     const groups = groupByClientOrVendor(rows, 'segment').filter(s => s.revenue > 0);
     return groups.map(s => ({
@@ -29,8 +65,25 @@ export default function ServicesPage({ rows }) {
 
   const topProducts    = useMemo(() => topNByField(rows, 'product', 'revenue', 20), [rows]);
   const allProducts    = useMemo(() => groupByClientOrVendor(rows, 'product'), [rows]);
-  const revPerNight    = useMemo(() => revenuePerNight(rows), [rows]);
   const itemsData      = useMemo(() => itemsPerSale(rows), [rows]);
+
+  // Receita/Pax: mapeia código de segmento → label/cor legíveis
+  const revPerPaxData  = useMemo(() =>
+    revenuePerPax(rows).map(s => ({
+      ...s,
+      label: SEGMENT_CFG[s.segment]?.label || s.segment || '(outro)',
+      color: SEGMENT_CFG[s.segment]?.color || '#94a3b8',
+    })),
+  [rows]);
+
+  // Hospedagem: só para itens com num_noites > 0, com label/cor
+  const revPerNightData = useMemo(() =>
+    revenuePerNight(rows).map(s => ({
+      ...s,
+      label: SEGMENT_CFG[s.segment]?.label || s.segment || '(outro)',
+      color: SEGMENT_CFG[s.segment]?.color || '#94a3b8',
+    })),
+  [rows]);
 
   const pageCount   = Math.ceil(allProducts.length / PAGE_SIZE);
   const prodRows    = allProducts.slice(prodPage * PAGE_SIZE, (prodPage + 1) * PAGE_SIZE);
@@ -180,86 +233,225 @@ export default function ServicesPage({ rows }) {
         </div>
       </div>
 
-      {/* Eficiência por Estadia */}
+      {/* Receita & Margem por Passageiro */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
         <div className="flex items-start justify-between gap-2 mb-1">
           <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
-            Eficiência por Estadia
-            <InfoTooltip text="Receita/Noite = Σfaturamento ÷ Σnum_noites por segmento (apenas itens com num_noites > 0). Itens/Venda = média de seqId distintos por ID de venda — um seqId diferente = um serviço adicional na mesma operação (cross-sell)." />
+            Receita & Margem por Passageiro — por Segmento
+            <InfoTooltip text="Receita/Pax = Σfaturamento ÷ Σnum_pax por segmento. Margem/Pax = Σ Resultado AB ÷ Σnum_pax. Cada item de serviço conta seus pax independentemente — não deduplica entre itens da mesma venda. Compara ticket médio e rentabilidade entre categorias de serviço." />
           </h2>
           <ExportButton
-            title="Eficiência por Estadia"
-            slug="servicos-eficiencia"
-            chartRef={efficiencyRef}
+            title="Receita por Passageiro — por Segmento"
+            slug="servicos-pax"
+            chartRef={revPerPaxRef}
             sections={[{
-              title: 'Receita por Noite — por Segmento',
-              chartRef: efficiencyRef,
+              title: 'Receita & Margem por Passageiro',
+              chartRef: revPerPaxRef,
               columns: [
-                { key: 'segment',     label: 'Segmento',        type: 'text'     },
-                { key: 'revenue',     label: 'Faturamento',     type: 'currency', total: true },
-                { key: 'nights',      label: 'Noites',          type: 'number'   },
-                { key: 'revPerNight', label: 'Receita/Noite',   type: 'currency' },
+                { key: 'label',        label: 'Segmento',    type: 'text'     },
+                { key: 'passengers',   label: 'Pax',         type: 'number',   total: true },
+                { key: 'revenue',      label: 'Faturamento', type: 'currency', total: true },
+                { key: 'revPerPax',    label: 'Receita/Pax', type: 'currency' },
+                { key: 'profitPerPax', label: 'Margem/Pax',  type: 'currency' },
+                { key: 'rentPct',      label: '% Rent.',     type: 'percent'  },
               ],
-              rows: revPerNight,
+              rows: revPerPaxData,
             }]}
           />
         </div>
         <p className="text-xs text-slate-400 mb-4">
-          Receita por noite por segmento (itens com num_noites preenchido) · média de itens por venda = indicador de cross-sell
+          Ticket médio e rentabilidade por passageiro-serviço, por categoria
         </p>
-        {revPerNight.length === 0 && itemsData.total === 0 ? (
-          <p className="text-xs text-slate-400 py-10 text-center">Sem dados de noites / itens por venda no período.</p>
+        {revPerPaxData.length === 0 ? (
+          <p className="text-xs text-slate-400 py-10 text-center">Sem dados de passageiros no período.</p>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-            <div ref={efficiencyRef}>
-              {revPerNight.length === 0 ? (
-                <p className="text-xs text-slate-400 py-8 text-center">Sem dados de hospedagem no período.</p>
-              ) : (
-                <ResponsiveContainer width="100%" height={240}>
-                  <BarChart data={revPerNight} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                    <XAxis type="number" tickFormatter={BRLk} tick={{ fontSize: 10 }} />
-                    <YAxis type="category" dataKey="segment" tick={{ fontSize: 10 }} width={80} />
-                    <Tooltip
-                      formatter={(v, name) => [name === 'Receita/Noite' ? BRLFULL(v) : v, name]}
-                      labelStyle={{ fontWeight: 600 }}
-                    />
-                    <Bar dataKey="revPerNight" name="Receita/Noite" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
+            {/* Gráfico */}
+            <div ref={revPerPaxRef}>
+              <ResponsiveContainer width="100%" height={Math.max(200, revPerPaxData.length * 52)}>
+                <BarChart data={revPerPaxData} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                  <XAxis type="number" tickFormatter={BRLk} tick={{ fontSize: 10 }} />
+                  <YAxis type="category" dataKey="label" tick={{ fontSize: 10 }} width={90} />
+                  <Tooltip content={<PaxTooltip />} />
+                  <Bar dataKey="revPerPax" name="Receita/Pax" radius={[0, 4, 4, 0]}>
+                    {revPerPaxData.map(d => (
+                      <Cell key={d.label} fill={d.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-            <div className="space-y-3">
+            {/* Tabela */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500 text-left">
+                    <th className="pb-2 pr-3 font-semibold">Segmento</th>
+                    <th className="pb-2 pr-3 font-semibold text-right">Pax</th>
+                    <th className="pb-2 pr-3 font-semibold text-right">Rec./Pax</th>
+                    <th className="pb-2 pr-3 font-semibold text-right">Marg./Pax</th>
+                    <th className="pb-2 font-semibold text-right">% Rent</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {revPerPaxData.map(d => {
+                    const mNeg   = d.profitPerPax < 0;
+                    const pctNeg = d.rentPct < 0;
+                    return (
+                      <tr key={d.segment} className={`border-b border-slate-100 ${mNeg ? 'bg-red-50' : 'hover:bg-slate-50'}`}>
+                        <td className="py-2 pr-3">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: d.color }} />
+                            <span className="font-medium text-slate-700">{d.label}</span>
+                          </div>
+                        </td>
+                        <td className="py-2 pr-3 text-right text-slate-500 tabular-nums">{d.passengers.toLocaleString('pt-BR')}</td>
+                        <td className="py-2 pr-3 text-right font-semibold text-slate-700 tabular-nums">{BRLFULL(d.revPerPax)}</td>
+                        <td className={`py-2 pr-3 text-right font-semibold tabular-nums ${mNeg ? 'text-red-600' : 'text-emerald-700'}`}>{BRLFULL(d.profitPerPax)}</td>
+                        <td className={`py-2 text-right font-semibold tabular-nums ${pctNeg ? 'text-red-600' : 'text-emerald-700'}`}>{PCTFMT(d.rentPct)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Cross-sell + Hospedagem */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Cross-sell */}
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
+          <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1 mb-1">
+            Cross-sell — Serviços por Venda
+            <InfoTooltip text="Média de serviços distintos por venda. Usa seqId (idseqintens) quando preenchido — cada seqId diferente = serviço adicional na mesma operação. Fallback: contagem de linhas por venda quando seqId não está disponível." />
+          </h2>
+          <p className="text-xs text-slate-400 mb-4">Indicador de pacotes: quantos serviços distintos por reserva</p>
+          {itemsData.total === 0 ? (
+            <p className="text-xs text-slate-400 py-8 text-center">Sem dados no período.</p>
+          ) : (
+            <div className="space-y-4">
               <KPICard
-                title="Média de itens por venda"
+                title="Média de serviços por venda"
                 value={itemsData.avg}
                 format="number"
                 color="indigo"
-                sub={`em ${(itemsData.total || 0).toLocaleString('pt-BR')} vendas com itens`}
+                sub={`em ${itemsData.total.toLocaleString('pt-BR')} vendas`}
               />
-              {itemsData.dist && (
-                <div className="space-y-2">
-                  {itemsData.dist.map(d => {
-                    const total = itemsData.total || 1;
-                    const pct = (d.count / total) * 100;
-                    return (
-                      <div key={d.label} className="text-xs">
-                        <div className="flex items-center justify-between mb-0.5">
-                          <span className="text-slate-600 font-medium">{d.label}</span>
-                          <div className="flex gap-3 text-slate-500 tabular-nums">
-                            <span>{d.count.toLocaleString('pt-BR')} vendas</span>
-                            <span className="w-10 text-right">{pct.toFixed(1)}%</span>
-                          </div>
-                        </div>
-                        <div className="w-full bg-slate-100 rounded-full h-1.5">
-                          <div className="h-1.5 rounded-full bg-indigo-400" style={{ width: `${pct}%` }} />
+              <div className="space-y-2">
+                {itemsData.dist.map(d => {
+                  const pct = itemsData.total > 0 ? (d.count / itemsData.total) * 100 : 0;
+                  return (
+                    <div key={d.label} className="text-xs">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-slate-600 font-medium">{d.label}</span>
+                        <div className="flex gap-3 text-slate-500 tabular-nums">
+                          <span>{d.count.toLocaleString('pt-BR')} vendas</span>
+                          <span className="w-11 text-right">{pct.toFixed(1)}%</span>
                         </div>
                       </div>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5">
+                        <div className="h-1.5 rounded-full bg-indigo-400" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Eficiência de Hospedagem — só aparece quando há dados de noites */}
+        {revPerNightData.length > 0 ? (
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+                Eficiência de Hospedagem
+                <InfoTooltip text="Somente itens com num_noites > 0. Receita/Noite = Σfaturamento ÷ Σnoites; Margem/Noite = Σ Resultado AB ÷ Σnoites. Permite comparar rentabilidade das acomodações vendidas por segmento." />
+              </h2>
+              <ExportButton
+                title="Eficiência de Hospedagem"
+                slug="servicos-hospedagem"
+                chartRef={hotelRef}
+                sections={[{
+                  title: 'Eficiência de Hospedagem',
+                  chartRef: hotelRef,
+                  columns: [
+                    { key: 'label',          label: 'Segmento',     type: 'text'     },
+                    { key: 'nights',         label: 'Noites',       type: 'number',   total: true },
+                    { key: 'revenue',        label: 'Faturamento',  type: 'currency', total: true },
+                    { key: 'revPerNight',    label: 'Rec./Noite',   type: 'currency' },
+                    { key: 'profitPerNight', label: 'Marg./Noite',  type: 'currency' },
+                    { key: 'rentPct',        label: '% Rent.',      type: 'percent'  },
+                  ],
+                  rows: revPerNightData,
+                }]}
+              />
+            </div>
+            <p className="text-xs text-slate-400 mb-4">
+              Itens com <code className="bg-slate-100 px-1 rounded">num_noites</code> preenchido — receita e margem por noite vendida
+            </p>
+            <div ref={hotelRef} className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500 text-left">
+                    <th className="pb-2 pr-3 font-semibold">Segmento</th>
+                    <th className="pb-2 pr-3 font-semibold text-right">Noites</th>
+                    <th className="pb-2 pr-3 font-semibold text-right">Rec./Noite</th>
+                    <th className="pb-2 pr-3 font-semibold text-right">Marg./Noite</th>
+                    <th className="pb-2 font-semibold text-right">% Rent</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {revPerNightData.map(d => {
+                    const mNeg   = d.profitPerNight < 0;
+                    const pctNeg = d.rentPct < 0;
+                    return (
+                      <tr key={d.segment} className={`border-b border-slate-100 ${mNeg ? 'bg-red-50' : 'hover:bg-slate-50'}`}>
+                        <td className="py-2 pr-3">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: d.color }} />
+                            <span className="font-medium text-slate-700">{d.label}</span>
+                          </div>
+                        </td>
+                        <td className="py-2 pr-3 text-right text-slate-500 tabular-nums">{d.nights.toLocaleString('pt-BR')}</td>
+                        <td className="py-2 pr-3 text-right font-semibold text-slate-700 tabular-nums">{BRLFULL(d.revPerNight)}</td>
+                        <td className={`py-2 pr-3 text-right font-semibold tabular-nums ${mNeg ? 'text-red-600' : 'text-emerald-700'}`}>{BRLFULL(d.profitPerNight)}</td>
+                        <td className={`py-2 text-right font-semibold tabular-nums ${pctNeg ? 'text-red-600' : 'text-emerald-700'}`}>{PCTFMT(d.rentPct)}</td>
+                      </tr>
                     );
                   })}
-                </div>
-              )}
+                </tbody>
+                {revPerNightData.length > 1 && (() => {
+                  const totNights  = revPerNightData.reduce((s, d) => s + d.nights, 0);
+                  const totRev     = revPerNightData.reduce((s, d) => s + d.revenue, 0);
+                  const totProfit  = revPerNightData.reduce((s, d) => s + d.profit, 0);
+                  const totRevPN   = totNights > 0 ? totRev / totNights : 0;
+                  const totMargPN  = totNights > 0 ? totProfit / totNights : 0;
+                  const totPct     = totRev > 0 ? (totProfit / totRev) * 100 : null;
+                  return (
+                    <tfoot>
+                      <tr className="border-t-2 border-slate-300 font-semibold text-slate-700 bg-slate-50">
+                        <td className="pt-2 pr-3 text-xs">TOTAL</td>
+                        <td className="pt-2 pr-3 text-right text-xs">{totNights.toLocaleString('pt-BR')}</td>
+                        <td className="pt-2 pr-3 text-right text-xs">{BRLFULL(totRevPN)}</td>
+                        <td className={`pt-2 pr-3 text-right text-xs ${totMargPN < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{BRLFULL(totMargPN)}</td>
+                        <td className={`pt-2 text-right text-xs ${totPct !== null && totPct < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{PCTFMT(totPct)}</td>
+                      </tr>
+                    </tfoot>
+                  );
+                })()}
+              </table>
             </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel flex items-center justify-center">
+            <p className="text-xs text-slate-400 text-center">
+              Sem registros de hospedagem<br />
+              <span className="text-slate-300">(num_noites não preenchido no período)</span>
+            </p>
           </div>
         )}
       </div>

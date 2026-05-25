@@ -87,8 +87,15 @@ export function PaxAuditModal({ rows, onClose }) {
           <div>
             <h2 className="text-base font-bold text-slate-800">Auditoria de Passageiros</h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Por venda, conta apenas o maior <code className="bg-slate-100 px-1 rounded">num_pax</code> entre todos os itens —
-              evita duplicar o mesmo grupo de pax quando a venda tem Transfer + Hotel + Ingresso.
+              Por venda, conta apenas o <strong>maior <code className="bg-slate-100 px-1 rounded">num_pax</code></strong> entre os itens —
+              evita duplicar o mesmo grupo quando uma venda tem Transfer + Almoço + Ingresso.
+              Vendas diferentes podem ter os mesmos pax (contagem separada por venda é intencional).
+            </p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              <span className="text-emerald-600 font-semibold">✓ contado</span> = pax usado na soma &nbsp;·&nbsp;
+              <span className="text-slate-400">= mesmo grupo</span> = item repetido, não soma &nbsp;·&nbsp;
+              <span className="text-amber-500">⚠</span> = itens com pax divergente (MAX foi aplicado) &nbsp;·&nbsp;
+              <span className="text-slate-400 text-[10px]">×N</span> = N itens com mesmo pax (grupo único)
             </p>
           </div>
           <button
@@ -138,8 +145,13 @@ export function PaxAuditModal({ rows, onClose }) {
                 <tr><td colSpan={9} className="py-10 text-center text-slate-400">Nenhuma venda encontrada.</td></tr>
               )}
               {pageRows.map((v, i) => {
-                const isExpanded = expandedIds.has(v.id);
-                const hasMultiPax = v.items.some(it => it.passengers !== v.maxPax);
+                const isExpanded   = expandedIds.has(v.id);
+                // hasMultiPax: algum item tem pax diferente do max → precisou usar MAX
+                const hasMultiPax  = v.items.some(it => it.passengers !== v.maxPax);
+                // allSame: todos os itens têm o mesmo pax (sem divergência)
+                const allSame      = !hasMultiPax && v.items.length > 1;
+                // firstMaxIdx: índice do 1º item que atinge o max (o "representante" do grupo)
+                const firstMaxIdx  = v.items.findIndex(it => it.passengers === v.maxPax);
                 return (
                   <>
                     <tr
@@ -162,39 +174,84 @@ export function PaxAuditModal({ rows, onClose }) {
                       <td className="py-2 pr-3 text-right font-semibold text-slate-700 tabular-nums">
                         {v.maxPax.toLocaleString('pt-BR')}
                         {hasMultiPax && (
-                          <span className="ml-1 text-amber-500 text-[10px]" title="Itens com pax divergente">⚠</span>
+                          <span
+                            className="ml-1 text-amber-500 text-[10px]"
+                            title="Itens com pax divergente — contando o maior"
+                          >⚠</span>
+                        )}
+                        {allSame && (
+                          <span
+                            className="ml-1 text-slate-400 text-[10px]"
+                            title="Todos os itens com mesmo pax — grupo único, contando 1×"
+                          >×{v.items.length}</span>
                         )}
                       </td>
                       <td className="py-2 text-right text-slate-700 tabular-nums">{BRLFULL(v.revenue)}</td>
                     </tr>
 
-                    {isExpanded && v.items.map((it, j) => {
-                      const isMax = it.passengers === v.maxPax;
-                      return (
-                        <tr
-                          key={`${v.id}-${j}`}
-                          className="bg-slate-50 border-b border-slate-100 text-slate-500"
-                        >
-                          <td colSpan={2} />
-                          <td className="py-1.5 pr-3 pl-2 italic text-slate-500 truncate max-w-[160px]">
-                            {it.product}
+                    {isExpanded && (
+                      <>
+                        {/* Legenda rápida dentro da venda expandida */}
+                        <tr className="bg-slate-50 border-b border-slate-100">
+                          <td colSpan={9} className="py-1 px-4 text-[10px] text-slate-400 italic">
+                            {hasMultiPax
+                              ? `Itens com pax diferentes → contando apenas o maior (${v.maxPax} pax)`
+                              : allSame
+                                ? `Todos os ${v.items.length} itens têm ${v.maxPax} pax → mesmo grupo, contando 1× = ${v.maxPax} pax`
+                                : `1 item → ${v.maxPax} pax`
+                            }
                           </td>
-                          <td className="py-1.5 pr-3 text-slate-400 truncate">{it.supplier}</td>
-                          <td className="py-1.5 pr-3 text-slate-400">{it.segment}</td>
-                          <td />
-                          <td />
-                          <td className="py-1.5 pr-3 text-right tabular-nums">
-                            <span className={isMax ? 'font-semibold text-emerald-700' : 'text-slate-400'}>
-                              {it.passengers.toLocaleString('pt-BR')}
-                            </span>
-                            {isMax && (
-                              <span className="ml-1 text-[10px] text-emerald-600 font-semibold">✓</span>
-                            )}
-                          </td>
-                          <td className="py-1.5 text-right tabular-nums text-slate-500">{BRLFULL(it.revenue)}</td>
                         </tr>
-                      );
-                    })}
+
+                        {v.items.map((it, j) => {
+                          const isMax      = it.passengers === v.maxPax;
+                          const isFirstMax = j === firstMaxIdx;
+
+                          // Regra única para todos os casos:
+                          // 1º item que atinge o MAX → verde + "✓ contado"  (só este entra na soma)
+                          // demais itens com mesmo pax → cinza + "= mesmo grupo" (não somam)
+                          // itens com pax menor       → cinza + "não contado"
+                          let paxColor, paxSuffix;
+                          if (isFirstMax) {
+                            paxColor  = 'font-semibold text-emerald-700';
+                            paxSuffix = v.items.length > 1
+                              ? <span className="ml-1 text-[10px] text-emerald-600 font-semibold">✓ contado</span>
+                              : null; // venda com 1 item: sem badge desnecessário
+                          } else if (isMax) {
+                            // Mesmo valor que o max, mas não é o primeiro — mesmo grupo
+                            paxColor  = 'text-slate-400';
+                            paxSuffix = <span className="ml-1 text-[10px] text-slate-400">= mesmo grupo</span>;
+                          } else {
+                            // Pax menor que o max
+                            paxColor  = 'text-slate-400';
+                            paxSuffix = <span className="ml-1 text-[10px] text-slate-300">não contado</span>;
+                          }
+
+                          return (
+                            <tr
+                              key={`${v.id}-${j}`}
+                              className="bg-slate-50 border-b border-slate-100 text-slate-500"
+                            >
+                              <td colSpan={2} />
+                              <td className="py-1.5 pr-3 pl-2 italic text-slate-500 truncate max-w-[160px]">
+                                {it.product}
+                              </td>
+                              <td className="py-1.5 pr-3 text-slate-400 truncate">{it.supplier}</td>
+                              <td className="py-1.5 pr-3 text-slate-400">{it.segment}</td>
+                              <td />
+                              <td />
+                              <td className="py-1.5 pr-3 text-right tabular-nums">
+                                <span className={paxColor}>
+                                  {it.passengers.toLocaleString('pt-BR')}
+                                </span>
+                                {paxSuffix}
+                              </td>
+                              <td className="py-1.5 text-right tabular-nums text-slate-500">{BRLFULL(it.revenue)}</td>
+                            </tr>
+                          );
+                        })}
+                      </>
+                    )}
                   </>
                 );
               })}
