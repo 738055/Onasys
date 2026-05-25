@@ -55,9 +55,9 @@ export function supplierMarginTrend(rows, topN = 10) {
     const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     if (!monthMap[month]) monthMap[month] = {};
     const sup = r.supplier;
-    if (!monthMap[month][sup]) monthMap[month][sup] = { revenue: 0, profitLiquido: 0 };
-    monthMap[month][sup].revenue       += r.revenue       || 0;
-    monthMap[month][sup].profitLiquido += r.profitLiquido || 0;
+    if (!monthMap[month][sup]) monthMap[month][sup] = { revenue: 0, profit: 0 };
+    monthMap[month][sup].revenue += r.revenue || 0;
+    monthMap[month][sup].profit  += r.profit  || 0;
   }
 
   const months = Object.keys(monthMap).sort();
@@ -65,7 +65,7 @@ export function supplierMarginTrend(rows, topN = 10) {
     const row = { month };
     for (const sup of topSuppliers) {
       const agg = monthMap[month]?.[sup];
-      row[sup] = agg && agg.revenue > 0 ? (agg.profitLiquido / agg.revenue) * 100 : null;
+      row[sup] = agg && agg.revenue > 0 ? (agg.profit / agg.revenue) * 100 : null;
     }
     return row;
   });

@@ -21,8 +21,8 @@ export function calcKPIs(rows) {
   const profitLiquido    = sum(rows, 'profitLiquido');
   const uniquePassengers = uniquePassengersByVenda(rows);
   const uniqueSales      = new Set(rows.map(r => r.id).filter(Boolean)).size;
-  // Margin always calculated as SUM(total_liquido) / SUM(total_vendas) — never average per_mkpliquido
-  const margin           = revenue !== 0 ? (profitLiquido / revenue) * 100 : 0;
+  // Margin = SUM(total_resultadoab) / SUM(total_vendas) — never average per_mkpliquido
+  const margin           = revenue !== 0 ? (profit / revenue) * 100 : 0;
   const ticketMedio      = uniquePassengers > 0 ? revenue / uniquePassengers : 0;
   return { revenue, profit, profitLiquido, margin, uniquePassengers, uniqueSales, ticketMedio, count: rows.length };
 }
@@ -50,7 +50,7 @@ export function groupByClientOrVendor(rows, groupField) {
     .map(({ _vendaMap, ...g }) => ({
       ...g,
       uniquePassengers: Object.values(_vendaMap).reduce((s, v) => s + v, 0),
-      rentPct: g.revenue !== 0 ? (g.profitLiquido / g.revenue) * 100 : null,
+      rentPct: g.revenue !== 0 ? (g.profit / g.revenue) * 100 : null,
     }))
     .sort((a, b) => b.revenue - a.revenue);
 }
@@ -61,9 +61,10 @@ export function groupByMonth(rows) {
     if (!r.emissionDate) continue;
     const d = r.emissionDate;
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    if (!map[key]) map[key] = { month: key, revenue: 0, profitLiquido: 0, passengers: 0 };
+    if (!map[key]) map[key] = { month: key, revenue: 0, profitLiquido: 0, profit: 0, passengers: 0 };
     map[key].revenue       += r.revenue;
     map[key].profitLiquido += r.profitLiquido;
+    map[key].profit        += r.profit;
     map[key].passengers    += r.passengers;
   }
   return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
@@ -91,13 +92,14 @@ export function scatterBySupplier(rows) {
   const map = {};
   for (const r of rows) {
     const key = r.supplier || '(sem nome)';
-    if (!map[key]) map[key] = { name: key, revenue: 0, profitLiquido: 0 };
+    if (!map[key]) map[key] = { name: key, revenue: 0, profitLiquido: 0, profit: 0 };
     map[key].revenue       += r.revenue;
     map[key].profitLiquido += r.profitLiquido;
+    map[key].profit        += r.profit;
   }
   return Object.values(map)
     .filter(s => s.revenue > 0)
-    .map(s => ({ ...s, margin: (s.profitLiquido / s.revenue) * 100 }));
+    .map(s => ({ ...s, margin: (s.profit / s.revenue) * 100 }));
 }
 
 export function groupByMonthAndField(rows, field) {
@@ -138,16 +140,17 @@ export function scatterByVendor(rows) {
   const map = {};
   for (const r of rows) {
     const key = r.vendor || '(sem nome)';
-    if (!map[key]) map[key] = { name: key, revenue: 0, profitLiquido: 0, saleIds: new Set() };
+    if (!map[key]) map[key] = { name: key, revenue: 0, profitLiquido: 0, profit: 0, saleIds: new Set() };
     map[key].revenue       += r.revenue;
     map[key].profitLiquido += r.profitLiquido;
+    map[key].profit        += r.profit;
     if (r.id) map[key].saleIds.add(r.id);
   }
   return Object.values(map)
     .filter(v => v.revenue > 0)
     .map(({ saleIds, ...v }) => ({
       ...v,
-      margin:    (v.profitLiquido / v.revenue) * 100,
+      margin:    (v.profit / v.revenue) * 100,
       saleCount: saleIds.size,
     }));
 }

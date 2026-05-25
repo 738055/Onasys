@@ -33,7 +33,7 @@ export default function GeoPage({ rows }) {
           <div className="flex items-start justify-between gap-2 mb-1">
             <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
             Faturamento por Região
-            <InfoTooltip text="Agrupamento pelo campo regiaobrasil da API. % Total = faturamento da região ÷ faturamento geral × 100. % Rent. = Σlíquido ÷ Σfaturamento da região × 100." />
+            <InfoTooltip text="Agrupado pelo campo regiaobrasil da API. % Fat. = faturamento da região ÷ total × 100. % Rent. = Resultado AB ÷ Faturamento da região × 100." />
           </h2>
             <ExportButton
               title="Faturamento por Região"
@@ -94,7 +94,8 @@ export default function GeoPage({ rows }) {
                   <tr><td colSpan={6} className="py-8 text-center text-slate-400">Sem dados.</td></tr>
                 )}
                 {regionsWithPct.map(r => {
-                  const isNeg  = r.profitLiquido < 0;
+                  const isNeg  = r.profit < 0;          // profit = total_resultadoab — define highlight
+                  const liqNeg = r.profitLiquido < 0;   // cor da célula Líquido (total_liquido)
                   const pctNeg = r.rentPct !== null && r.rentPct < 0;
                   return (
                     <tr key={r.name} className={`border-b border-slate-100 ${isNeg ? 'bg-red-50' : 'hover:bg-slate-50'}`}>
@@ -102,7 +103,7 @@ export default function GeoPage({ rows }) {
                       <td className="py-2 pr-3 text-right text-slate-700">{BRLFULL(r.revenue)}</td>
                       <td className="py-2 pr-3 text-right text-slate-400 tabular-nums">{r.revPct.toFixed(1)}%</td>
                       <td className="py-2 pr-3 text-right text-slate-500">{r.uniquePassengers.toLocaleString('pt-BR')}</td>
-                      <td className={`py-2 pr-3 text-right font-semibold ${isNeg ? 'text-red-600' : 'text-emerald-700'}`}>
+                      <td className={`py-2 pr-3 text-right font-semibold ${liqNeg ? 'text-red-600' : 'text-emerald-700'}`}>
                         {BRLFULL(r.profitLiquido)}
                       </td>
                       <td className={`py-2 text-right font-semibold tabular-nums ${pctNeg ? 'text-red-600' : 'text-emerald-700'}`}>
@@ -113,10 +114,12 @@ export default function GeoPage({ rows }) {
                 })}
               </tbody>
               {regionsWithPct.length > 0 && (() => {
-                const totRev = regionsWithPct.reduce((s, x) => s + x.revenue, 0);
-                const totLiq = regionsWithPct.reduce((s, x) => s + x.profitLiquido, 0);
-                const totPax = regionsWithPct.reduce((s, x) => s + x.uniquePassengers, 0);
-                const totPct = totRev !== 0 ? (totLiq / totRev) * 100 : null;
+                const totRev    = regionsWithPct.reduce((s, x) => s + x.revenue, 0);
+                const totLiq    = regionsWithPct.reduce((s, x) => s + x.profitLiquido, 0);
+                const totProfit = regionsWithPct.reduce((s, x) => s + x.profit, 0);
+                const totPax    = regionsWithPct.reduce((s, x) => s + x.uniquePassengers, 0);
+                // totPct usa profit (total_resultadoab) — regra de ouro: Σprofit / Σrevenue
+                const totPct    = totRev !== 0 ? (totProfit / totRev) * 100 : null;
                 return (
                   <tfoot>
                     <tr className="border-t-2 border-slate-300 font-semibold text-slate-700 bg-slate-50">
@@ -142,7 +145,7 @@ export default function GeoPage({ rows }) {
           <div className="flex items-start justify-between gap-2 mb-1">
             <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
               Top 15 Estados — Faturamento
-              <InfoTooltip text="Agrupamento pelo campo dsestado da API. O gráfico mostra os 15 maiores. A tabela ao lado lista TODOS os estados do período. % Rent. = Σlíquido ÷ Σfaturamento do estado × 100." />
+              <InfoTooltip text="Agrupado pelo campo dsestado da API. Gráfico = top 15; tabela = todos os estados. % Rent. = Resultado AB ÷ Faturamento do estado × 100." />
             </h2>
             <ExportButton
               title="Ranking de Estados"

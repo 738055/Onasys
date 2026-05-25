@@ -24,7 +24,8 @@ function VendorTooltip({ active, payload }) {
       <p className="font-semibold text-slate-700 mb-2 max-w-[200px] truncate">{d.name}</p>
       <div className="space-y-0.5">
         <div className="flex justify-between gap-4"><span className="text-slate-500">Faturamento</span><span className="font-semibold tabular-nums">{BRLFULL(d.revenue)}</span></div>
-        <div className="flex justify-between gap-4"><span className="text-slate-500">Líquido</span><span className={`font-semibold tabular-nums ${d.profitLiquido < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{BRLFULL(d.profitLiquido)}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-slate-500">Líquido <span className="text-slate-400 font-normal">(total_liquido)</span></span><span className={`font-semibold tabular-nums ${d.profitLiquido < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{BRLFULL(d.profitLiquido)}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-slate-500">Resultado AB <span className="text-slate-400 font-normal">(total_resultadoab)</span></span><span className={`font-semibold tabular-nums ${d.profit < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{BRLFULL(d.profit)}</span></div>
         <div className="flex justify-between gap-4"><span className="text-slate-500">% Margem</span><span className={`font-semibold tabular-nums ${d.marginPct < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{d.marginPct.toFixed(2)}%</span></div>
       </div>
     </div>
@@ -45,17 +46,19 @@ export default function SalesPage({ rows }) {
     const map = {};
     for (const r of rows) {
       const key = r.vendor || '(sem nome)';
-      if (!map[key]) map[key] = { name: key, revenue: 0, profitLiquido: 0 };
+      if (!map[key]) map[key] = { name: key, revenue: 0, profitLiquido: 0, profit: 0 };
       map[key].revenue       += r.revenue       || 0;
       map[key].profitLiquido += r.profitLiquido || 0;
+      map[key].profit        += r.profit        || 0;
     }
     return Object.values(map)
       .map(v => ({
         ...v,
-        marginPct: v.revenue > 0 ? (v.profitLiquido / v.revenue) * 100 : 0,
+        // marginPct usa profit (total_resultadoab) — valor final após todos os custos
+        marginPct: v.revenue > 0 ? (v.profit / v.revenue) * 100 : 0,
         value: topMetric === 'revenue'       ? v.revenue
              : topMetric === 'profitLiquido' ? v.profitLiquido
-             : v.revenue > 0 ? (v.profitLiquido / v.revenue) * 100 : 0,
+             : v.revenue > 0 ? (v.profit / v.revenue) * 100 : 0,
       }))
       .sort((a, b) => b.value - a.value)
       .slice(0, topN);
@@ -78,7 +81,7 @@ export default function SalesPage({ rows }) {
               <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
                 Top <span className="text-blue-600 mx-1">{topN}</span> Emissores
                 {' — '}<span className="text-blue-600 mx-1">{METRIC_CFG[topMetric].label}</span>
-                <InfoTooltip text="Ranking dos emissores (nomeemissor) pela métrica selecionada. Margem = Σlíquido ÷ Σfaturamento do emissor — nunca média de percentuais individuais, evitando distorção por itens pequenos." />
+                <InfoTooltip text="Ranking por emissor (nomeemissor). Líquido = total_liquido (antes da comissão do emissor). % Margem = Σ Resultado AB ÷ Σ Faturamento — nunca média de percentuais individuais." />
               </h2>
             </div>
             <div className="flex flex-wrap gap-2 items-center">
@@ -300,7 +303,7 @@ export default function SalesPage({ rows }) {
             return (
               <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
                 Agrupamento por <span className="text-blue-600 mx-1">{label}</span>
-                <InfoTooltip text="Cada linha agrega todos os itens do período para aquele agrupador. Pax: por Produto = soma de passageiros por item; por outros = passageiros únicos por venda (sem duplicar itens). % Rent. = Σlíquido ÷ Σfaturamento." />
+                <InfoTooltip text="Cada linha agrega todos os itens do período. Líquido = total_liquido (antes de deduzir comissão do emissor). Resultado AB = total_resultadoab (valor final). % Rent. = Resultado AB ÷ Faturamento." />
                 <span className="ml-1 text-slate-400 font-normal text-xs">
                   ({grouped.length.toLocaleString('pt-BR')} {label.toLowerCase()})
                 </span>
@@ -389,9 +392,10 @@ export default function SalesPage({ rows }) {
                 </tr>
               )}
               {grouped.map((g, i) => {
-                const isNeg   = g.profitLiquido < 0;
+                // isNeg usa profit (total_resultadoab) — valor definitivo para highlight de linha
+                const isNeg   = g.profit < 0;
+                const liqNeg  = g.profitLiquido < 0;  // cor da célula Líquido (total_liquido)
                 const pctNeg  = g.rentPct !== null && g.rentPct < 0;
-                const abIsNeg = g.profit < 0;
                 const paxValue = groupField === 'product' ? g.passengers : g.uniquePassengers;
                 return (
                   <tr
@@ -402,7 +406,7 @@ export default function SalesPage({ rows }) {
                     <td className="py-2 pr-3 font-medium text-slate-700 max-w-[16rem] truncate" title={g.name}>{g.name}</td>
                     <td className="py-2 pr-3 text-right text-slate-700">{BRLFULL(g.revenue)}</td>
                     <td className="py-2 pr-3 text-right text-slate-500">{paxValue.toLocaleString('pt-BR')}</td>
-                    <td className={`py-2 pr-3 text-right font-semibold ${isNeg ? 'text-red-600' : 'text-emerald-700'}`}>
+                    <td className={`py-2 pr-3 text-right font-semibold ${liqNeg ? 'text-red-600' : 'text-emerald-700'}`}>
                       {BRLFULL(g.profitLiquido)}
                     </td>
                     <td className={`py-2 pr-3 text-right font-semibold tabular-nums ${pctNeg ? 'text-red-600' : 'text-emerald-700'}`}>
@@ -411,7 +415,7 @@ export default function SalesPage({ rows }) {
                     <td className="py-2 pr-3 text-right text-amber-700 tabular-nums">
                       {g.commissionEmissor !== 0 ? BRLFULL(g.commissionEmissor) : <span className="text-slate-300">—</span>}
                     </td>
-                    <td className={`py-2 text-right tabular-nums ${abIsNeg ? 'text-red-500' : 'text-slate-500'}`}>
+                    <td className={`py-2 text-right tabular-nums ${isNeg ? 'text-red-500' : 'text-slate-500'}`}>
                       {BRLFULL(g.profit)}
                     </td>
                   </tr>
@@ -424,7 +428,7 @@ export default function SalesPage({ rows }) {
               const totProfit  = grouped.reduce((s, g) => s + g.profit, 0);
               const totComm    = grouped.reduce((s, g) => s + g.commissionEmissor, 0);
               const totPax     = grouped.reduce((s, g) => s + (groupField === 'product' ? g.passengers : g.uniquePassengers), 0);
-              const totPct     = totRevenue !== 0 ? (totLiquido / totRevenue) * 100 : null;
+              const totPct     = totRevenue !== 0 ? (totProfit  / totRevenue) * 100 : null;
               return (
                 <tfoot>
                   <tr className="border-t-2 border-slate-300 font-semibold text-slate-700 bg-slate-50">
@@ -495,7 +499,8 @@ export default function SalesPage({ rows }) {
               </thead>
               <tbody>
                 {commercial.map((c, i) => {
-                  const isNeg  = c.profitLiquido < 0;
+                  const isNeg  = c.profit < 0;          // profit = total_resultadoab — define highlight
+                  const liqNeg = c.profitLiquido < 0;   // cor da célula Líquido (total_liquido)
                   const pctNeg = c.rentPct !== null && c.rentPct < 0;
                   return (
                     <tr key={c.name} className={`border-b border-slate-100 ${isNeg ? 'bg-red-50' : 'hover:bg-slate-50'}`}>
@@ -503,7 +508,7 @@ export default function SalesPage({ rows }) {
                       <td className="py-2 pr-3 font-medium text-slate-700 max-w-[16rem] truncate" title={c.name}>{c.name}</td>
                       <td className="py-2 pr-3 text-right text-slate-700">{BRLFULL(c.revenue)}</td>
                       <td className="py-2 pr-3 text-right text-slate-500">{c.uniquePassengers.toLocaleString('pt-BR')}</td>
-                      <td className={`py-2 pr-3 text-right font-semibold ${isNeg ? 'text-red-600' : 'text-emerald-700'}`}>
+                      <td className={`py-2 pr-3 text-right font-semibold ${liqNeg ? 'text-red-600' : 'text-emerald-700'}`}>
                         {BRLFULL(c.profitLiquido)}
                       </td>
                       <td className={`py-2 text-right font-semibold tabular-nums ${pctNeg ? 'text-red-600' : 'text-emerald-700'}`}>
@@ -514,10 +519,12 @@ export default function SalesPage({ rows }) {
                 })}
               </tbody>
               {commercial.length > 0 && (() => {
-                const totRev = commercial.reduce((s, c) => s + c.revenue, 0);
-                const totLiq = commercial.reduce((s, c) => s + c.profitLiquido, 0);
-                const totPax = commercial.reduce((s, c) => s + c.uniquePassengers, 0);
-                const totPct = totRev !== 0 ? (totLiq / totRev) * 100 : null;
+                const totRev    = commercial.reduce((s, c) => s + c.revenue, 0);
+                const totLiq    = commercial.reduce((s, c) => s + c.profitLiquido, 0);
+                const totProfit = commercial.reduce((s, c) => s + c.profit, 0);
+                const totPax    = commercial.reduce((s, c) => s + c.uniquePassengers, 0);
+                // totPct usa profit (total_resultadoab) — regra de ouro: Σprofit / Σrevenue
+                const totPct    = totRev !== 0 ? (totProfit / totRev) * 100 : null;
                 return (
                   <tfoot>
                     <tr className="border-t-2 border-slate-300 font-semibold text-slate-700 bg-slate-50">

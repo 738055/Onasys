@@ -16,7 +16,7 @@ const LEAD_BUCKETS = [
 ];
 
 export function calcLeadTimeBuckets(rows) {
-  const buckets = LEAD_BUCKETS.map(b => ({ ...b, count: 0, revenue: 0, profitLiquido: 0 }));
+  const buckets = LEAD_BUCKETS.map(b => ({ ...b, count: 0, revenue: 0, profitLiquido: 0, profit: 0 }));
   let total = 0;
   let skipped = 0;
 
@@ -29,6 +29,7 @@ export function calcLeadTimeBuckets(rows) {
         b.count++;
         b.revenue       += r.revenue       || 0;
         b.profitLiquido += r.profitLiquido || 0;
+        b.profit        += r.profit        || 0;
         break;
       }
     }
@@ -37,7 +38,7 @@ export function calcLeadTimeBuckets(rows) {
   return {
     buckets: buckets.map(b => ({
       ...b,
-      margin: b.revenue > 0 ? (b.profitLiquido / b.revenue) * 100 : null,
+      margin: b.revenue > 0 ? (b.profit / b.revenue) * 100 : null,
     })),
     total,
     skipped,

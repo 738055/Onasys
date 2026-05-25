@@ -44,9 +44,10 @@ export default function ClientsPage({ rows }) {
     const map = {};
     for (const r of rows) {
       const type = r.clientType || '(sem tipo)';
-      if (!map[type]) map[type] = { name: type, revenue: 0, profitLiquido: 0, clients: new Set(), saleIds: new Set() };
+      if (!map[type]) map[type] = { name: type, revenue: 0, profitLiquido: 0, profit: 0, clients: new Set(), saleIds: new Set() };
       map[type].revenue       += r.revenue       || 0;
       map[type].profitLiquido += r.profitLiquido || 0;
+      map[type].profit        += r.profit        || 0;
       if (r.client) map[type].clients.add(r.client);
       if (r.id)     map[type].saleIds.add(r.id);
     }
@@ -55,9 +56,10 @@ export default function ClientsPage({ rows }) {
         name:        t.name,
         revenue:     t.revenue,
         profitLiquido: t.profitLiquido,
+        profit:      t.profit,
         clientCount: t.clients.size,
         saleCount:   t.saleIds.size,
-        rentPct:     t.revenue > 0 ? (t.profitLiquido / t.revenue) * 100 : null,
+        rentPct:     t.revenue > 0 ? (t.profit / t.revenue) * 100 : null,
       }))
       .sort((a, b) => b.revenue - a.revenue);
   }, [rows]);
@@ -69,9 +71,10 @@ export default function ClientsPage({ rows }) {
     for (const r of rows) {
       if ((r.clientType || '(sem tipo)') !== selectedType) continue;
       const key = r.client || '(sem nome)';
-      if (!map[key]) map[key] = { name: key, revenue: 0, profitLiquido: 0, saleIds: new Set() };
+      if (!map[key]) map[key] = { name: key, revenue: 0, profitLiquido: 0, profit: 0, saleIds: new Set() };
       map[key].revenue       += r.revenue       || 0;
       map[key].profitLiquido += r.profitLiquido || 0;
+      map[key].profit        += r.profit        || 0;
       if (r.id) map[key].saleIds.add(r.id);
     }
     return Object.values(map)
@@ -79,8 +82,9 @@ export default function ClientsPage({ rows }) {
         name:         c.name,
         revenue:      c.revenue,
         profitLiquido: c.profitLiquido,
+        profit:       c.profit,
         saleCount:    c.saleIds.size,
-        rentPct:      c.revenue > 0 ? (c.profitLiquido / c.revenue) * 100 : null,
+        rentPct:      c.revenue > 0 ? (c.profit / c.revenue) * 100 : null,
       }))
       .sort((a, b) => b.revenue - a.revenue);
   }, [rows, selectedType]);
@@ -93,9 +97,10 @@ export default function ClientsPage({ rows }) {
       if ((r.clientType || '(sem tipo)') !== selectedType) continue;
       if ((r.client     || '(sem nome)') !== selectedClient) continue;
       const key = r.product || '(sem serviço)';
-      if (!map[key]) map[key] = { name: key, segment: r.segment, revenue: 0, profitLiquido: 0, count: 0, passengers: 0 };
+      if (!map[key]) map[key] = { name: key, segment: r.segment, revenue: 0, profitLiquido: 0, profit: 0, count: 0, passengers: 0 };
       map[key].revenue       += r.revenue       || 0;
       map[key].profitLiquido += r.profitLiquido || 0;
+      map[key].profit        += r.profit        || 0;
       map[key].count         += 1;
       map[key].passengers    += r.passengers    || 0;
     }
@@ -103,7 +108,7 @@ export default function ClientsPage({ rows }) {
     return Object.values(map)
       .map(s => ({
         ...s,
-        rentPct: s.revenue > 0 ? (s.profitLiquido / s.revenue) * 100 : null,
+        rentPct: s.revenue > 0 ? (s.profit / s.revenue) * 100 : null,
         revPct:  total > 0     ? (s.revenue / total) * 100            : 0,
       }))
       .sort((a, b) => b.revenue - a.revenue);
@@ -112,19 +117,21 @@ export default function ClientsPage({ rows }) {
   // KPIs for selected client header
   const clientKPIs = useMemo(() => {
     if (!selectedClient || !selectedType) return null;
-    let revenue = 0, profitLiquido = 0;
+    let revenue = 0, profitLiquido = 0, profit = 0;
     const saleIds = new Set();
     for (const r of rows) {
       if ((r.clientType || '(sem tipo)') !== selectedType) continue;
       if ((r.client     || '(sem nome)') !== selectedClient) continue;
       revenue       += r.revenue       || 0;
       profitLiquido += r.profitLiquido || 0;
+      profit        += r.profit        || 0;
       if (r.id) saleIds.add(r.id);
     }
     return {
       revenue,
       profitLiquido,
-      rentPct:    revenue > 0 ? (profitLiquido / revenue) * 100 : null,
+      profit,
+      rentPct:    revenue > 0 ? (profit / revenue) * 100 : null,
       uniqueSales: saleIds.size,
     };
   }, [rows, selectedType, selectedClient]);
@@ -185,7 +192,7 @@ export default function ClientsPage({ rows }) {
             <div>
               <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-0.5">
                 Tipo de Cliente
-                <InfoTooltip text="Agrupamento pelo campo rede da API (tipo ou rede de agência). clientCount = nº de clientes distintos. saleCount = nº de vendas únicas. % Rent. = Σlíquido ÷ Σfaturamento do tipo × 100." />
+                <InfoTooltip text="Agrupado pelo campo rede da API (tipo/rede de agência). clientCount = clientes distintos; saleCount = vendas únicas. % Rent. = Resultado AB ÷ Faturamento do tipo × 100." />
               </p>
               <p className="text-[10px] text-slate-400 mt-0.5">{clientTypes.length} tipos · campo REDE</p>
             </div>

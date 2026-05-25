@@ -28,9 +28,10 @@ function ScatterTooltip({ active, payload }) {
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-lg text-xs">
       <p className="font-semibold text-slate-700 mb-1">{d.name}</p>
-      <p>Faturamento: {BRLFULL(d.revenue)}</p>
-      <p>Líquido: {BRLFULL(d.profitLiquido)}</p>
-      <p>Margem: {d.margin.toFixed(2)}%</p>
+      <p className="text-slate-500">Faturamento: <span className="text-slate-700 font-medium">{BRLFULL(d.revenue)}</span></p>
+      <p className="text-slate-500">Líquido <span className="text-slate-400">(total_liquido)</span>: <span className="font-medium">{BRLFULL(d.profitLiquido)}</span></p>
+      <p className="text-slate-500">Resultado AB <span className="text-slate-400">(total_resultadoab)</span>: <span className={`font-medium ${d.profit < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{BRLFULL(d.profit)}</span></p>
+      <p className="text-slate-500">Margem: <span className={`font-medium ${d.margin < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{d.margin.toFixed(2)}%</span></p>
     </div>
   );
 }
@@ -58,17 +59,17 @@ export default function MarginPage({ rows }) {
   const scatter      = useMemo(() => scatterBySupplier(rows), [rows]);
   const vendorScatter = useMemo(() => scatterByVendor(rows),   [rows]);
   const trendData    = useMemo(() => supplierMarginTrend(rows, 10), [rows]);
-  const losses  = useMemo(() => rows.filter(r => r.profitLiquido < 0).sort((a, b) => a.profitLiquido - b.profitLiquido), [rows]);
+  const losses  = useMemo(() => rows.filter(r => r.profit < 0).sort((a, b) => a.profit - b.profit), [rows]);
 
-  const totalPrejuizo = useMemo(() => losses.reduce((s, r) => s + r.profitLiquido, 0), [losses]);
-  const piorResultado = useMemo(() => losses.length > 0 ? losses[0].profitLiquido : 0, [losses]);
+  const totalPrejuizo = useMemo(() => losses.reduce((s, r) => s + r.profit, 0), [losses]);
+  const piorResultado = useMemo(() => losses.length > 0 ? losses[0].profit : 0, [losses]);
   const pctNeg        = rows.length > 0 ? (losses.length / rows.length * 100) : 0;
 
   const distribution = useMemo(() => {
     const counts = DIST_BUCKETS.map(b => ({ ...b, count: 0, revenue: 0 }));
     for (const r of rows) {
       if (!r.revenue || r.revenue === 0) continue;
-      const m = (r.profitLiquido / r.revenue) * 100;
+      const m = (r.profit / r.revenue) * 100;
       for (const b of counts) {
         if (m >= b.min && m < b.max) {
           b.count++;
@@ -90,7 +91,7 @@ export default function MarginPage({ rows }) {
         <div className="bg-red-50 border border-red-100 rounded-xl p-4">
           <p className="text-xs font-semibold uppercase tracking-widest text-red-700 opacity-70 flex items-center gap-0.5">
             Total Prejuízo
-            <InfoTooltip text="Soma de todos os Lucros Líquidos negativos do período. Cada item de venda é analisado individualmente — um fornecedor pode ter margem positiva no agregado mas ter itens negativos pontuais." />
+            <InfoTooltip text="Soma dos Resultados AB (total_resultadoab) negativos do período. Cada linha da API é analisada individualmente — um fornecedor pode ter margem positiva no agregado e ter itens negativos pontuais." />
           </p>
           <p className="mt-2 text-xl font-bold text-red-800 tabular-nums">{BRLFULL(totalPrejuizo)}</p>
           <p className="mt-0.5 text-xs text-red-600 opacity-60">soma do período</p>
@@ -98,7 +99,7 @@ export default function MarginPage({ rows }) {
         <div className="bg-red-50 border border-red-100 rounded-xl p-4">
           <p className="text-xs font-semibold uppercase tracking-widest text-red-700 opacity-70 flex items-center gap-0.5">
             Itens Negativos
-            <InfoTooltip text="Contagem de linhas onde (total_liquido + total_descontos) &lt; 0, expressa como % do total de itens no período. Um item = uma linha da API (um serviço dentro de uma venda)." />
+            <InfoTooltip text="Contagem de linhas onde total_resultadoab &lt; 0, expressa como % do total de itens no período. Um item = uma linha da API (um serviço dentro de uma venda)." />
           </p>
           <p className="mt-2 text-xl font-bold text-red-800 tabular-nums">{losses.length.toLocaleString('pt-BR')}</p>
           <p className="mt-0.5 text-xs text-red-600 opacity-60">{pctNeg.toFixed(1)}% dos itens</p>
@@ -120,7 +121,7 @@ export default function MarginPage({ rows }) {
         <div className="flex items-start justify-between gap-2 mb-1">
           <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
             Distribuição de Margem por Item
-            <InfoTooltip text="Para cada item: margem = (total_liquido + total_descontos) ÷ total_vendas × 100. Itens com total_vendas = 0 são excluídos. A distribuição conta quantos itens caem em cada faixa de rentabilidade." />
+            <InfoTooltip text="Para cada item: margem = total_resultadoab ÷ total_vendas × 100. Itens com total_vendas = 0 são excluídos. A distribuição conta quantos itens caem em cada faixa de rentabilidade." />
           </h2>
           <ExportButton
             title="Distribuição de Margem por Item"
@@ -186,7 +187,7 @@ export default function MarginPage({ rows }) {
         <div className="flex items-start justify-between gap-2 mb-1">
           <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
             Margem vs Faturamento por Fornecedor
-            <InfoTooltip text="Cada ponto = 1 fornecedor. Margem = Σlíquido ÷ Σfaturamento × 100 (do fornecedor inteiro). Posição X = tamanho; posição Y = qualidade. Abaixo de 0% = prejuízo no período." />
+            <InfoTooltip text="Cada ponto = 1 fornecedor (nomefornecedor). X = Faturamento (tamanho); Y = % Margem (qualidade). Margem = Σ Resultado AB ÷ Σ Faturamento. Abaixo de 0% = prejuízo no período." />
           </h2>
           <ExportButton
             title="Margem vs Faturamento por Fornecedor"
@@ -240,7 +241,7 @@ export default function MarginPage({ rows }) {
         <div className="flex items-start justify-between gap-2 mb-1">
           <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
             Emissor × Margem × Volume
-            <InfoTooltip text="Scatter idêntico ao de fornecedores, mas agrupado por emissor (nomeemissor). Emissores no quadrante inferior direito = alto volume com margem baixa — candidatos a revisão de comissões ou capacitação." />
+            <InfoTooltip text="Cada ponto = 1 emissor (nomeemissor). X = Faturamento; Y = % Margem (Resultado AB ÷ Faturamento). Quadrante inferior direito = alto volume com margem baixa — candidatos a revisão de comissões." />
           </h2>
           <ExportButton
             title="Emissor — Margem vs Faturamento"
@@ -321,13 +322,13 @@ export default function MarginPage({ rows }) {
                 { key: 'supplier',     label: 'Fornecedor',   type: 'text'     },
                 { key: 'product',      label: 'Produto',      type: 'text'     },
                 { key: 'revenue',      label: 'Faturamento',  type: 'currency', total: true },
-                { key: 'profitLiquido',label: 'Lucro Líquido',type: 'currency', total: true },
+                { key: 'profit',       label: 'Resultado AB', type: 'currency', total: true },
                 { key: 'marginPctStr', label: '% Rent.',      type: 'text'     },
               ],
               rows: losses.map(r => ({
                 ...r,
                 emissionDate: r.emissionDate ? r.emissionDate.toLocaleDateString('pt-BR') : '-',
-                marginPctStr: r.revenue > 0 ? `${(r.profitLiquido / r.revenue * 100).toFixed(2)}%` : '-',
+                marginPctStr: r.revenue > 0 ? `${(r.profit / r.revenue * 100).toFixed(2)}%` : '-',
               })),
             }]}
           />
@@ -346,13 +347,13 @@ export default function MarginPage({ rows }) {
                     <th className="pb-2 pr-3 font-semibold">Fornecedor</th>
                     <th className="pb-2 pr-3 font-semibold">Produto</th>
                     <th className="pb-2 pr-3 font-semibold text-right">Faturamento</th>
-                    <th className="pb-2 pr-3 font-semibold text-right">Lucro Líquido</th>
+                    <th className="pb-2 pr-3 font-semibold text-right">Resultado AB</th>
                     <th className="pb-2 font-semibold text-right">% Rent</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pageRows.map((r, i) => {
-                    const marginPct = r.revenue > 0 ? (r.profitLiquido / r.revenue * 100) : 0;
+                    const marginPct = r.revenue > 0 ? (r.profit / r.revenue * 100) : 0;
                     return (
                       <tr key={`${r.id}-${i}`} className="border-b border-slate-100 bg-red-50">
                         <td className="py-2 pr-3 font-mono text-slate-600">{r.id}</td>
@@ -361,7 +362,7 @@ export default function MarginPage({ rows }) {
                         <td className="py-2 pr-3 max-w-[8rem] truncate">{r.supplier}</td>
                         <td className="py-2 pr-3 max-w-[8rem] truncate">{r.product}</td>
                         <td className="py-2 pr-3 text-right">{BRLFULL(r.revenue)}</td>
-                        <td className="py-2 pr-3 text-right font-semibold text-red-600">{BRLFULL(r.profitLiquido)}</td>
+                        <td className="py-2 pr-3 text-right font-semibold text-red-600">{BRLFULL(r.profit)}</td>
                         <td className="py-2 text-right font-semibold text-red-600 tabular-nums">{marginPct.toFixed(2)}%</td>
                       </tr>
                     );
@@ -399,7 +400,7 @@ export default function MarginPage({ rows }) {
         <div className="flex items-start justify-between gap-2 mb-1">
           <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
             Tendência de Margem por Fornecedor
-            <InfoTooltip text="Para os top 10 fornecedores por faturamento, calcula-se a margem mês a mês: Σlíquido ÷ Σfaturamento dentro de cada mês. Linhas com queda consistente indicam deterioração da relação comercial." />
+            <InfoTooltip text="Top 10 fornecedores por faturamento — margem mês a mês: Resultado AB ÷ Faturamento dentro de cada mês. Linhas em queda consistente indicam deterioração da relação comercial." />
           </h2>
           <ExportButton
             title="Tendência de Margem por Fornecedor"

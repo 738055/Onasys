@@ -89,7 +89,7 @@ export default function IntelligencePage({ rows }) {
         <div className="flex items-start justify-between gap-2 mb-1">
           <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
             Lead Time — Emissão até Check-in
-            <InfoTooltip text="Diferença em dias entre ddataemissao e ddatain de cada item. Itens sem uma das datas, ou com check-in anterior à emissão, são excluídos. A linha de margem = Σlíquido ÷ Σfaturamento dos itens em cada faixa de antecedência." />
+            <InfoTooltip text="Dias entre ddataemissao e ddatain de cada item. Itens sem uma das datas ou com check-in anterior à emissão são excluídos. Linha de margem = Resultado AB ÷ Faturamento por faixa de antecedência." />
           </h2>
           <ExportButton
             title="Lead Time — Emissão até Check-in"

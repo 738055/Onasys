@@ -34,13 +34,16 @@ export function normalizeRow(raw) {
     commercial:    String(raw.nomecomercial || '').trim(),
     saleType:      String(raw.tipovenda     || '').trim(),
     seqId:         String(raw.idseqintens  || '').trim(),
-    passengers:    parseNum(raw.num_pax),
+    // Fallback: API pode retornar "Num_pax" (capital N) ou "num_pax" (snake_case original).
+    passengers:    parseNum(raw.Num_pax ?? raw.num_pax),
     nights:        parseNum(raw.num_noites),
     revenue:       parseNum(raw.total_vendas),
-    // total_descontos is informational in ONASYS (per-pax amount × num_pax inflated by API bug).
-    // Adding it back removes the erroneous cost deduction: result matches ONASYS front-end.
-    profit:              parseNum(raw.total_resultadoab) + parseNum(raw.total_descontos),
-    profitLiquido:       parseNum(raw.total_liquido)     + parseNum(raw.total_descontos),
+    // profit        = total_resultadoab: valor final após todos os custos.
+    //                 → KPI "Líquido" (ExecutivePage) e base da % Rentabilidade.
+    // profitLiquido = total_liquido: antes de deduzir comissão do emissor.
+    //                 → Coluna "Líquido" nas tabelas (par com "Resultado AB").
+    profit:        parseNum(raw.total_resultadoab),
+    profitLiquido: parseNum(raw.total_liquido),
     commissionEmissor:   parseNum(raw.total_com_emissor),
     marginPct:           parseNum(raw.per_mkpliquido),
   };

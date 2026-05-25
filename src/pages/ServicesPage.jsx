@@ -46,7 +46,7 @@ export default function ServicesPage({ rows }) {
           <div className="flex items-start justify-between gap-2 mb-1">
             <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
               Mix por Segmento — Faturamento
-              <InfoTooltip text="Composição do faturamento por categoria de serviço (campo dsCateg). % = faturamento do segmento ÷ faturamento total × 100. A % de rentabilidade usa Σlíquido ÷ Σfaturamento do segmento." />
+              <InfoTooltip text="Composição do faturamento por categoria de serviço (campo dsCateg da API). % Fat. = faturamento do segmento ÷ total × 100. % Rent. = Resultado AB ÷ Faturamento do segmento." />
             </h2>
             <ExportButton
               title="Mix por Segmento — Faturamento"
@@ -157,10 +157,12 @@ export default function ServicesPage({ rows }) {
                 ))}
               </tbody>
               {segmentData.length > 0 && (() => {
-                const totRev     = segmentData.reduce((s, x) => s + x.revenue, 0);
-                const totLiq     = segmentData.reduce((s, x) => s + x.profitLiquido, 0);
-                const totPax     = segmentData.reduce((s, x) => s + x.uniquePassengers, 0);
-                const totPct     = totRev !== 0 ? (totLiq / totRev) * 100 : null;
+                const totRev    = segmentData.reduce((s, x) => s + x.revenue, 0);
+                const totLiq    = segmentData.reduce((s, x) => s + x.profitLiquido, 0);
+                const totProfit = segmentData.reduce((s, x) => s + x.profit, 0);
+                const totPax    = segmentData.reduce((s, x) => s + x.uniquePassengers, 0);
+                // totPct usa profit (total_resultadoab) — regra de ouro: Σprofit / Σrevenue
+                const totPct    = totRev !== 0 ? (totProfit / totRev) * 100 : null;
                 return (
                   <tfoot>
                     <tr className="border-t-2 border-slate-300 font-semibold text-slate-700 bg-slate-50">
@@ -315,9 +317,9 @@ export default function ServicesPage({ rows }) {
                 { key: 'name',         label: 'Serviço',     type: 'text'     },
                 { key: 'revenue',      label: 'Faturamento', type: 'currency', total: true },
                 { key: 'passengers',   label: 'Pax (itens)', type: 'number'   },
-                { key: 'profitLiquido',label: 'Líquido',     type: 'currency', total: true },
-                { key: 'rentPct',      label: '% Rent.',     type: 'percent'  },
-                { key: 'profit',       label: 'Resultado AB',type: 'currency', total: true },
+                { key: 'profitLiquido', label: 'Líquido',      type: 'currency', total: true },
+                { key: 'rentPct',      label: '% Rent.',      type: 'percent'  },
+                { key: 'profit',       label: 'Resultado AB', type: 'currency', total: true },
               ],
               rows: allProducts,
             }]}
@@ -342,9 +344,9 @@ export default function ServicesPage({ rows }) {
                 <tr><td colSpan={7} className="py-8 text-center text-slate-400">Sem dados no período.</td></tr>
               )}
               {prodRows.map((g, i) => {
-                const isNeg   = g.profitLiquido < 0;
+                const isNeg   = g.profit < 0;
+                const liqNeg  = g.profitLiquido < 0;
                 const pctNeg  = g.rentPct !== null && g.rentPct < 0;
-                const abIsNeg = g.profit < 0;
                 const rank    = prodPage * PAGE_SIZE + i + 1;
                 return (
                   <tr key={g.name} className={`border-b border-slate-100 ${isNeg ? 'bg-red-50' : 'hover:bg-slate-50'}`}>
@@ -352,13 +354,13 @@ export default function ServicesPage({ rows }) {
                     <td className="py-2 pr-3 font-medium text-slate-700 max-w-[20rem] truncate" title={g.name}>{g.name}</td>
                     <td className="py-2 pr-3 text-right text-slate-700">{BRLFULL(g.revenue)}</td>
                     <td className="py-2 pr-3 text-right text-slate-500">{g.passengers.toLocaleString('pt-BR')}</td>
-                    <td className={`py-2 pr-3 text-right font-semibold ${isNeg ? 'text-red-600' : 'text-emerald-700'}`}>
+                    <td className={`py-2 pr-3 text-right font-semibold ${liqNeg ? 'text-red-600' : 'text-emerald-700'}`}>
                       {BRLFULL(g.profitLiquido)}
                     </td>
                     <td className={`py-2 pr-3 text-right font-semibold tabular-nums ${pctNeg ? 'text-red-600' : 'text-emerald-700'}`}>
                       {PCTFMT(g.rentPct)}
                     </td>
-                    <td className={`py-2 text-right tabular-nums ${abIsNeg ? 'text-red-500' : 'text-slate-500'}`}>
+                    <td className={`py-2 text-right tabular-nums font-semibold ${isNeg ? 'text-red-600' : 'text-slate-600'}`}>
                       {BRLFULL(g.profit)}
                     </td>
                   </tr>

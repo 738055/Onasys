@@ -104,10 +104,10 @@ export default function ExecutivePage({ rows }) {
     groupByMonth(rows).map(m => ({
       ...m,
       label: fmtMonth(m.month),
-      marginPct: m.revenue !== 0 ? (m.profitLiquido / m.revenue) * 100 : 0,
+      marginPct: m.revenue !== 0 ? (m.profit / m.revenue) * 100 : 0,
     })),
   [rows]);
-  const topSuppliers = useMemo(() => topNByField(rows, 'supplier', 'profitLiquido', 10), [rows]);
+  const topSuppliers = useMemo(() => topNByField(rows, 'supplier', 'profit', 10), [rows]);
   const segmentData  = useMemo(() => {
     const groups = groupByClientOrVendor(rows, 'segment').filter(s => s.revenue > 0);
     return groups.map(s => ({
@@ -133,11 +133,11 @@ export default function ExecutivePage({ rows }) {
     const map = {};
     groupByMonth(yearRows).forEach(m => { map[m.month] = m; });
     return monthKeys.map(key => {
-      const m = map[key] || { month: key, revenue: 0, profitLiquido: 0, passengers: 0 };
+      const m = map[key] || { month: key, revenue: 0, profitLiquido: 0, profit: 0, passengers: 0 };
       return {
         ...m,
         label: fmtMonth(key),
-        marginPct: m.revenue !== 0 ? (m.profitLiquido / m.revenue) * 100 : 0,
+        marginPct: m.revenue !== 0 ? (m.profit / m.revenue) * 100 : 0,
       };
     });
   }, [yearRows, monthKeys]);
@@ -167,12 +167,12 @@ export default function ExecutivePage({ rows }) {
 
   const [paxAuditOpen, setPaxAuditOpen] = useState(false);
 
-  const kpiColor = kpis.profitLiquido >= 0 ? 'green' : 'red';
+  const kpiColor = kpis.profit >= 0 ? 'green' : 'red';
   const segTotal = segmentData.reduce((s, x) => s + x.revenue, 0);
 
   const kpiSummary = [
     { label: 'Faturamento Total', value: kpis.revenue,          type: 'currency' },
-    { label: 'Líquido',           value: kpis.profitLiquido,    type: 'currency' },
+    { label: 'Líquido',           value: kpis.profit,           type: 'currency' },
     { label: '% Rentabilidade',   value: kpis.margin,           type: 'percent'  },
     { label: 'Passageiros',       value: kpis.uniquePassengers, type: 'number'   },
     { label: 'Ticket Médio',      value: kpis.ticketMedio,      type: 'currency' },
@@ -194,13 +194,13 @@ export default function ExecutivePage({ rows }) {
       <div className="relative">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <KPICard title="Faturamento Total"  value={kpis.revenue}           format="currency" icon={DollarSign}  color="blue"
-            tooltip="Soma de total_vendas de todos os itens do período. Valor bruto faturado antes de qualquer dedução de custo ou comissão." />
-          <KPICard title="Líquido"            value={kpis.profitLiquido}     format="currency" icon={TrendingUp}   color={kpiColor}
-            tooltip="Σ(total_liquido + total_descontos). O campo total_descontos é somado de volta pois a API ONASYS aplica uma dedução dupla nesse campo — corrigido para bater com o painel web da ONASYS." />
+            tooltip="Faturamento bruto do período — campo total_vendas da API. Valor antes de qualquer dedução de custo, comissão ou desconto." />
+          <KPICard title="Líquido"            value={kpis.profit}            format="currency" icon={TrendingUp}   color={kpiColor}
+            tooltip="Resultado AB do período — campo total_resultadoab da API. Valor final após deduzir: custo de fornecedor, comissões repassadas, taxas, descontos e comissão do emissor. É o lucro real da operação." />
           <KPICard title="% Rentabilidade"    value={kpis.margin}            format="percent"  icon={Percent}      color="amber"
-            tooltip="Lucro Líquido ÷ Faturamento × 100. Calculada sobre os totais somados (nunca média de percentuais individuais), evitando distorção por itens de tamanhos muito diferentes." />
+            tooltip="Resultado AB ÷ Faturamento × 100. Calculada sobre os totais do período, nunca como média dos percentuais individuais — evita distorção por itens com valores muito diferentes." />
           <KPICard title="Passageiros"        value={kpis.uniquePassengers}  format="number"   icon={Users}        color="slate"   sub="por venda única"
-            tooltip="Passageiros únicos por venda. Quando uma venda tem vários itens (ex: Transfer + Hotel), usa-se o maior num_pax registrado para o ID de venda — evita contar o mesmo grupo de passageiros múltiplas vezes."
+            tooltip="Passageiros únicos por venda (campo Num_pax / num_pax da API). Uma venda pode ter vários itens — Transfer + Hotel + Ingresso. Conta-se apenas o maior num_pax do grupo, evitando duplicar o mesmo grupo de pax."
             onClick={() => setPaxAuditOpen(true)} />
           <KPICard title="Ticket Médio"       value={kpis.ticketMedio}       format="currency" icon={CreditCard}   color="indigo"  sub="receita / pax"
             tooltip="Faturamento Total ÷ Passageiros únicos. Indica o valor médio recebido por passageiro no período. Usa a contagem de pax únicos (sem duplicação por itens da mesma venda)." />
@@ -221,7 +221,7 @@ export default function ExecutivePage({ rows }) {
         <div className="flex items-start justify-between gap-2 mb-1">
           <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
             Evolução Mensal — Faturamento &amp; Margem
-            <InfoTooltip text="Barras = faturamento bruto por mês. Linha verde = lucro líquido. Linha pontilhada = % margem (eixo direito). Agrupado pela data de emissão (ou realizado, conforme seleção de período). A área destacada em azul representa o intervalo de datas do filtro ativo." />
+            <InfoTooltip text="Barras = Faturamento (total_vendas). Linha verde = Resultado AB (total_resultadoab). Linha pontilhada = % Rent. (eixo direito). Agrupado por data de emissão ou check-in, conforme o modo ativo. Área azul = filtro de datas aplicado." />
           </h2>
           <div className="flex items-center gap-3 flex-shrink-0">
             <YearNav {...yearNavProps} />
@@ -352,10 +352,10 @@ export default function ExecutivePage({ rows }) {
           <div className="flex items-start justify-between gap-2 mb-4">
             <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
               Top 10 Fornecedores — Lucro Líquido
-              <InfoTooltip text="Ranking dos 10 fornecedores com maior Lucro Líquido (Σtotal_liquido + Σtotal_descontos). Um fornecedor de alto faturamento com margem baixa pode aparecer abaixo de fornecedores menores e mais rentáveis." />
+              <InfoTooltip text="Top 10 fornecedores por Resultado AB (total_resultadoab). Um fornecedor grande com margem baixa pode ficar abaixo de fornecedores menores e mais rentáveis." />
             </h2>
             <ExportButton
-              title="Top 10 Fornecedores — Lucro Líquido"
+              title="Top 10 Fornecedores — Resultado AB"
               slug="executivo-top-fornecedores"
               chartRef={topSuppliersRef}
               sections={[{
@@ -363,7 +363,7 @@ export default function ExecutivePage({ rows }) {
                 chartRef: topSuppliersRef,
                 columns: [
                   { key: 'name',         label: 'Fornecedor',   type: 'text'     },
-                  { key: 'value',        label: 'Lucro Líquido',type: 'currency', total: true },
+                  { key: 'value',        label: 'Resultado AB',  type: 'currency', total: true },
                   { key: 'revenue',      label: 'Faturamento',  type: 'currency', total: true },
                   { key: 'profitLiquido',label: 'Líquido',      type: 'currency'  },
                 ],
@@ -380,8 +380,8 @@ export default function ExecutivePage({ rows }) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                   <XAxis type="number" tickFormatter={BRLk} tick={{ fontSize: 10 }} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={130} />
-                  <Tooltip formatter={v => [BRLFULL(v), 'Lucro Líquido']} />
-                  <Bar dataKey="value" name="Lucro Líquido" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                  <Tooltip formatter={v => [BRLFULL(v), 'Resultado AB']} />
+                  <Bar dataKey="value" name="Resultado AB" fill="#3b82f6" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -410,7 +410,8 @@ export default function ExecutivePage({ rows }) {
                 ],
                 rows: segmentData.map(s => ({
                   ...s,
-                  rentPct: s.revenue > 0 ? (s.profitLiquido / s.revenue) * 100 : 0,
+                  // rentPct já calculado em groupByClientOrVendor como profit/revenue
+                  rentPct: s.revenue > 0 ? (s.profit / s.revenue) * 100 : 0,
                 })),
               }]}
             />
