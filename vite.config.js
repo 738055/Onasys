@@ -299,6 +299,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), buildOnasysGatewayPlugin(env)],
+    base: './',
     server: {
       port: 5173,
       host: '0.0.0.0',

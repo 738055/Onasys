@@ -19,8 +19,27 @@ export function useYearData({ year, qualPeriodo, nSistema }) {
       nSistema:       String(nSistema),
     });
 
-    fetch(`/api/onasys/rentabilidade?${params}`, { signal: controller.signal })
-      .then(r => {
+  let apiPrefix = '';
+
+    // Se estiver rodando no servidor local (localhost), precisamos do nome da aplicação no IIS
+    if (window.location.hostname === 'localhost') {
+        const pastas = window.location.pathname.split('/');
+        // O split de "/wrbhomologa/Dashboard/..." gera um array: ["", "wrbhomologa", "Dashboard", ...]
+        // Pegamos o índice 1, que será sempre o nome do sistema no IIS ('wrbhomologa' ou 'WRB')
+        if (pastas.length > 1 && pastas[1] !== '') {
+            apiPrefix = '/' + pastas[1]; 
+        }
+    }
+    // NOTA: Se NÃO for localhost (ex: wrb.homologa...), o apiPrefix continua vazio (''),
+    // apontando perfeitamente para a raiz do domínio.
+
+    // Monta a URL cravada na pasta proxy da raiz da aplicação
+    const endpoint = import.meta.env.DEV 
+      ? `/api/onasys/rentabilidade?${params}`
+      : `${apiPrefix}/proxy/RentabilidadeGateway.ashx?${params}`;
+
+    fetch(endpoint, { signal: controller.signal })
+      .then(async r => {
         if (!r.ok) {
           return r.json()
             .then(body => { throw new Error(body?.error || `HTTP ${r.status}`); })
