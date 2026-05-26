@@ -33,11 +33,22 @@ function firstOfMonth() {
 }
 
 export default function App() {
-  const [nSistema,    setNSistema]    = useState(0);
-  const [startDate,   setStartDate]   = useState(firstOfMonth());
+  const [nSistema,    setNSistema]    = useState(1);          // Receptivo por padrão
+  const [startDate,   setStartDate]   = useState(today());
   const [endDate,     setEndDate]     = useState(today());
-  const [qualPeriodo, setQualPeriodo] = useState(1);
+  const [qualPeriodo, setQualPeriodo] = useState(2);          // Realizado por padrão
   const [activeTab,   setActiveTab]   = useState('executive');
+
+  // Draft states: controlam os inputs de data sem disparar fetch
+  const [draftStart, setDraftStart]  = useState(today());
+  const [draftEnd,   setDraftEnd]    = useState(today());
+
+  const hasPendingDates = draftStart !== startDate || draftEnd !== endDate;
+
+  function applyDates() {
+    setStartDate(draftStart);
+    setEndDate(draftEnd);
+  }
 
   const [filialFilter,     setFilialFilter]     = useState([]);
   const [channelFilter,    setChannelFilter]    = useState([]);
@@ -119,25 +130,66 @@ export default function App() {
 
       {/* Controls */}
       <div className="bg-white border-b border-slate-200 px-6 py-3">
-        <div className="flex flex-wrap items-center gap-4 max-w-screen-2xl mx-auto">
+        <div className="flex flex-wrap items-center gap-3 max-w-screen-2xl mx-auto">
+
+          {/* ── Datas com estado draft ── */}
           <label className="flex items-center gap-2 text-sm text-slate-600">
             De
             <input
               type="date"
-              value={startDate}
-              onChange={e => setStartDate(e.target.value)}
-              className="border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              value={draftStart}
+              onChange={e => setDraftStart(e.target.value)}
+              className={`border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 transition-colors ${
+                hasPendingDates
+                  ? 'border-amber-400 bg-amber-50 focus:ring-amber-400 text-amber-800'
+                  : 'border-slate-300 focus:ring-blue-400'
+              }`}
             />
           </label>
           <label className="flex items-center gap-2 text-sm text-slate-600">
             Até
             <input
               type="date"
-              value={endDate}
-              onChange={e => setEndDate(e.target.value)}
-              className="border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              value={draftEnd}
+              onChange={e => setDraftEnd(e.target.value)}
+              className={`border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 transition-colors ${
+                hasPendingDates
+                  ? 'border-amber-400 bg-amber-50 focus:ring-amber-400 text-amber-800'
+                  : 'border-slate-300 focus:ring-blue-400'
+              }`}
             />
           </label>
+
+          {/* Botão Aplicar — destaque quando há pendência */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={applyDates}
+              disabled={!hasPendingDates}
+              className={`relative px-4 py-1.5 rounded text-sm font-semibold transition-all ${
+                hasPendingDates
+                  ? 'bg-amber-500 text-white shadow ring-2 ring-amber-300 ring-offset-1 hover:bg-amber-600'
+                  : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              }`}
+            >
+              {hasPendingDates && (
+                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+                </span>
+              )}
+              Aplicar
+            </button>
+            {hasPendingDates && (
+              <span className="text-xs text-amber-600 font-medium">
+                Datas alteradas — clique em Aplicar
+              </span>
+            )}
+          </div>
+
+          {/* Separador visual */}
+          <div className="h-5 w-px bg-slate-200" />
+
+          {/* ── Período (Emitido / Realizado) — dispara fetch imediatamente ── */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-500">Período:</span>
             {[{ label: 'Emitido', value: 1 }, { label: 'Realizado', value: 2 }].map(p => (
@@ -154,6 +206,7 @@ export default function App() {
               </button>
             ))}
           </div>
+
           {!loading && (
             <span className="ml-auto text-xs text-slate-400">
               {rows.length.toLocaleString('pt-BR')} registros

@@ -3,6 +3,13 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, PieChart, Pie, Cell,
 } from 'recharts';
+import { groupByClientOrVendor, topNByField, revenuePerPax, revenuePerNight, itemsPerSale } from '../utils/aggregations';
+import { BRLFULL, BRLk, PCTFMT, SEGMENT_CFG } from '../utils/format';
+import { KPICard } from '../components/KPICard';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { ExportButton } from '../components/ExportButton';
+
+const PAGE_SIZE = 30;
 
 // Tooltip customizado para gráfico Receita/Pax
 function PaxTooltip({ active, payload }) {
@@ -18,12 +25,12 @@ function PaxTooltip({ active, payload }) {
         </div>
         <div className="flex justify-between gap-4">
           <span className="text-slate-500">Receita/Pax</span>
-          <span className="font-semibold tabular-nums">{d.revPerPax.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+          <span className="font-semibold tabular-nums">{BRLFULL(d.revPerPax)}</span>
         </div>
         <div className="flex justify-between gap-4">
           <span className="text-slate-500">Margem/Pax</span>
           <span className={`font-semibold tabular-nums ${d.profitPerPax < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
-            {d.profitPerPax.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            {BRLFULL(d.profitPerPax)}
           </span>
         </div>
         <div className="flex justify-between gap-4">
@@ -36,23 +43,14 @@ function PaxTooltip({ active, payload }) {
     </div>
   );
 }
-import { groupByClientOrVendor, topNByField, revenuePerPax, revenuePerNight, itemsPerSale } from '../utils/aggregations';
-import { BRLFULL, BRLk, PCTFMT, SEGMENT_CFG } from '../utils/format';
-import { KPICard } from '../components/KPICard';
-import { InfoTooltip } from '../components/InfoTooltip';
-import { ExportButton } from '../components/ExportButton';
-
-const PAGE_SIZE = 30;
 
 export default function ServicesPage({ rows }) {
   const [prodPage, setProdPage] = useState(0);
   useEffect(() => { setProdPage(0); }, [rows]);
   const segMixRef    = useRef(null);
   const top20Ref     = useRef(null);
-  const efficiencyRef = useRef(null);
-
-  const revPerPaxRef  = useRef(null);
-  const hotelRef      = useRef(null);
+  const revPerPaxRef = useRef(null);
+  const hotelRef     = useRef(null);
 
   const segmentData = useMemo(() => {
     const groups = groupByClientOrVendor(rows, 'segment').filter(s => s.revenue > 0);
