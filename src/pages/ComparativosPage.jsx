@@ -16,23 +16,30 @@ function firstOf(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padS
 function lastOf(d)  { return ISO(new Date(d.getFullYear(), d.getMonth() + 1, 0)); }
 function shift(d, n){ return new Date(d.getFullYear(), d.getMonth() + n, 1); }
 
-const N = new Date();
+const N           = new Date();
+const todayStr    = ISO(N);
+const lastYearStr = ISO(new Date(N.getFullYear() - 1, N.getMonth(), N.getDate()));
 
 const PRESETS = [
   {
+    label: 'Hoje vs mesmo dia ano passado',
+    a: { start: todayStr,             end: todayStr             },
+    b: { start: lastYearStr,          end: lastYearStr          },
+  },
+  {
     label: 'Mês atual vs mês anterior',
-    a: { start: firstOf(N),          end: ISO(N)                  },
-    b: { start: firstOf(shift(N,-1)), end: lastOf(shift(N,-1))    },
+    a: { start: firstOf(N),           end: ISO(N)               },
+    b: { start: firstOf(shift(N,-1)), end: lastOf(shift(N,-1))  },
   },
   {
     label: 'Mês atual vs mesmo mês ano passado',
-    a: { start: firstOf(N),           end: ISO(N)                  },
-    b: { start: firstOf(shift(N,-12)), end: lastOf(shift(N,-12))   },
+    a: { start: firstOf(N),            end: ISO(N)                },
+    b: { start: firstOf(shift(N,-12)), end: lastOf(shift(N,-12))  },
   },
   {
     label: 'Mês anterior vs mesmo mês ano passado',
-    a: { start: firstOf(shift(N,-1)),  end: lastOf(shift(N,-1))    },
-    b: { start: firstOf(shift(N,-13)), end: lastOf(shift(N,-13))   },
+    a: { start: firstOf(shift(N,-1)),  end: lastOf(shift(N,-1))   },
+    b: { start: firstOf(shift(N,-13)), end: lastOf(shift(N,-13))  },
   },
 ];
 
@@ -71,8 +78,8 @@ function KpiCard({ title, aVal, bVal, format }) {
     if (format === 'percent')  return `${Number(v).toFixed(2)}%`;
     return Number(v).toLocaleString('pt-BR');
   };
-  const d  = pctDelta(aVal, bVal);
-  const up = d !== null && d > 0;
+  const d    = pctDelta(aVal, bVal);
+  const up   = d !== null && d > 0;
   const zero = d !== null && Math.abs(d) < 0.1;
 
   return (
@@ -99,35 +106,80 @@ function KpiCard({ title, aVal, bVal, format }) {
   );
 }
 
-function PeriodConfig({ badge, badgeClass, label, start, end, qual, sys, onStart, onEnd, onQual, onSys }) {
+// ── PeriodConfig com draft/apply e indicador de pendência ──────────────────
+function PeriodConfig({
+  badge, badgeClass, label,
+  draftStart, draftEnd, hasPending,
+  onDraftStart, onDraftEnd, onApply,
+  qual, sys, onQual, onSys,
+}) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <span className={`text-[11px] font-bold rounded px-1.5 py-0.5 ${badgeClass}`}>{badge}</span>
         <span className="text-sm font-semibold text-slate-700">{label}</span>
       </div>
+
+      {/* Datas + botão Aplicar */}
       <div className="flex flex-wrap gap-3 items-center">
         <label className="flex items-center gap-1.5 text-sm text-slate-600">
           De
           <input
-            type="date" value={start} onChange={e => onStart(e.target.value)}
-            className="border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            type="date" value={draftStart} onChange={e => onDraftStart(e.target.value)}
+            className={`border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 transition-colors ${
+              hasPending
+                ? 'border-amber-400 bg-amber-50 focus:ring-amber-400 text-amber-800'
+                : 'border-slate-300 focus:ring-blue-400'
+            }`}
           />
         </label>
         <label className="flex items-center gap-1.5 text-sm text-slate-600">
           Até
           <input
-            type="date" value={end} onChange={e => onEnd(e.target.value)}
-            className="border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            type="date" value={draftEnd} onChange={e => onDraftEnd(e.target.value)}
+            className={`border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 transition-colors ${
+              hasPending
+                ? 'border-amber-400 bg-amber-50 focus:ring-amber-400 text-amber-800'
+                : 'border-slate-300 focus:ring-blue-400'
+            }`}
           />
         </label>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={onApply}
+            disabled={!hasPending}
+            className={`relative px-3 py-1 rounded text-xs font-semibold transition-all ${
+              hasPending
+                ? 'bg-amber-500 text-white shadow ring-2 ring-amber-300 ring-offset-1 hover:bg-amber-600'
+                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+            }`}
+          >
+            {hasPending && (
+              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+              </span>
+            )}
+            Aplicar
+          </button>
+          {hasPending && (
+            <span className="text-[10px] text-amber-600 font-medium whitespace-nowrap">
+              não aplicado
+            </span>
+          )}
+        </div>
       </div>
+
+      {/* Período + Perfil — selects segmentados */}
       <div className="flex flex-wrap gap-2">
         <div className="flex rounded border border-slate-200 overflow-hidden text-xs">
           {PERIOD_OPTS.map((o, i) => (
             <button
               key={o.value} onClick={() => onQual(o.value)}
-              className={`px-2.5 py-1 transition-colors ${i > 0 ? 'border-l border-slate-200' : ''} ${qual === o.value ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              className={`px-2.5 py-1 transition-colors ${i > 0 ? 'border-l border-slate-200' : ''} ${
+                qual === o.value ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+              }`}
             >{o.label}</button>
           ))}
         </div>
@@ -135,7 +187,9 @@ function PeriodConfig({ badge, badgeClass, label, start, end, qual, sys, onStart
           {PROFILE_OPTS.map((o, i) => (
             <button
               key={o.value} onClick={() => onSys(o.value)}
-              className={`px-2.5 py-1 transition-colors ${i > 0 ? 'border-l border-slate-200' : ''} ${sys === o.value ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              className={`px-2.5 py-1 transition-colors ${i > 0 ? 'border-l border-slate-200' : ''} ${
+                sys === o.value ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+              }`}
             >{o.label}</button>
           ))}
         </div>
@@ -144,23 +198,42 @@ function PeriodConfig({ badge, badgeClass, label, start, end, qual, sys, onStart
   );
 }
 
-export default function ComparativosPage() {
+// ── Page ───────────────────────────────────────────────────────────────────
+export default function ComparativosPage({ qualPeriodo = 2, nSistema = 1 }) {
   const segChartRef = useRef(null);
 
-  const [startA, setStartA] = useState(firstOf(N));
-  const [endA,   setEndA]   = useState(ISO(N));
-  const [qualA,  setQualA]  = useState(1);
-  const [sysA,   setSysA]   = useState(0);
+  // ── Período A — estados aplicados (disparam fetch) ──
+  const [startA, setStartA] = useState(todayStr);
+  const [endA,   setEndA]   = useState(todayStr);
+  const [qualA,  setQualA]  = useState(qualPeriodo);
+  const [sysA,   setSysA]   = useState(nSistema);
 
-  const [startB, setStartB] = useState(firstOf(shift(N, -1)));
-  const [endB,   setEndB]   = useState(lastOf(shift(N, -1)));
-  const [qualB,  setQualB]  = useState(1);
-  const [sysB,   setSysB]   = useState(0);
+  // ── Período B ──
+  const [startB, setStartB] = useState(lastYearStr);
+  const [endB,   setEndB]   = useState(lastYearStr);
+  const [qualB,  setQualB]  = useState(qualPeriodo);
+  const [sysB,   setSysB]   = useState(nSistema);
+
+  // ── Drafts de data (inputs não disparam fetch) ──
+  const [draftStartA, setDraftStartA] = useState(todayStr);
+  const [draftEndA,   setDraftEndA]   = useState(todayStr);
+  const [draftStartB, setDraftStartB] = useState(lastYearStr);
+  const [draftEndB,   setDraftEndB]   = useState(lastYearStr);
+
+  const hasPendingA = draftStartA !== startA || draftEndA !== endA;
+  const hasPendingB = draftStartB !== startB || draftEndB !== endB;
+
+  function applyA() { setStartA(draftStartA); setEndA(draftEndA); }
+  function applyB() { setStartB(draftStartB); setEndB(draftEndB); }
 
   const [dim, setDim] = useState('supplier');
 
-  const { rows: rowsA, loading: loadingA } = useDashboardData({ startDate: startA, endDate: endA, qualPeriodo: qualA, nSistema: sysA });
-  const { rows: rowsB, loading: loadingB } = useDashboardData({ startDate: startB, endDate: endB, qualPeriodo: qualB, nSistema: sysB });
+  const { rows: rowsA, loading: loadingA } = useDashboardData({
+    startDate: startA, endDate: endA, qualPeriodo: qualA, nSistema: sysA,
+  });
+  const { rows: rowsB, loading: loadingB } = useDashboardData({
+    startDate: startB, endDate: endB, qualPeriodo: qualB, nSistema: sysB,
+  });
 
   const kpiA = useMemo(() => calcKPIs(rowsA), [rowsA]);
   const kpiB = useMemo(() => calcKPIs(rowsB), [rowsB]);
@@ -189,20 +262,23 @@ export default function ComparativosPage() {
     return allNames
       .map(name => ({
         name,
-        ra: aMap[name] || { revenue: 0, profitLiquido: 0, rentPct: null },
-        rb: bMap[name] || { revenue: 0, profitLiquido: 0, rentPct: null },
+        ra: aMap[name] || { revenue: 0, profitLiquido: 0, profit: 0, rentPct: null },
+        rb: bMap[name] || { revenue: 0, profitLiquido: 0, profit: 0, rentPct: null },
       }))
       .sort((x, y) => (y.ra.revenue + y.rb.revenue) - (x.ra.revenue + x.rb.revenue));
   }, [rowsA, rowsB, dim]);
 
+  // Preset aplica nos dois estados (applied + draft)
   function applyPreset(p) {
     setStartA(p.a.start); setEndA(p.a.end);
     setStartB(p.b.start); setEndB(p.b.end);
+    setDraftStartA(p.a.start); setDraftEndA(p.a.end);
+    setDraftStartB(p.b.start); setDraftEndB(p.b.end);
   }
 
-  const loading = loadingA || loadingB;
-  const labelA  = `${fmtBR(startA)} – ${fmtBR(endA)}`;
-  const labelB  = `${fmtBR(startB)} – ${fmtBR(endB)}`;
+  const loading  = loadingA || loadingB;
+  const labelA   = `${fmtBR(startA)} – ${fmtBR(endA)}`;
+  const labelB   = `${fmtBR(startB)} – ${fmtBR(endB)}`;
   const dimLabel = DIM_OPTS.find(d => d.value === dim)?.label || dim;
 
   return (
@@ -210,6 +286,7 @@ export default function ComparativosPage() {
 
       {/* Config panel */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">
+        {/* Presets */}
         <div className="flex flex-wrap gap-2 mb-5">
           {PRESETS.map(p => (
             <button
@@ -226,14 +303,22 @@ export default function ComparativosPage() {
           <PeriodConfig
             badge="A" badgeClass="bg-blue-600 text-white"
             label="Período comparado"
-            start={startA} end={endA} qual={qualA} sys={sysA}
-            onStart={setStartA} onEnd={setEndA} onQual={setQualA} onSys={setSysA}
+            draftStart={draftStartA} draftEnd={draftEndA}
+            hasPending={hasPendingA}
+            onDraftStart={setDraftStartA} onDraftEnd={setDraftEndA}
+            onApply={applyA}
+            qual={qualA} sys={sysA}
+            onQual={setQualA} onSys={setSysA}
           />
           <PeriodConfig
             badge="B" badgeClass="bg-slate-500 text-white"
             label="Período base"
-            start={startB} end={endB} qual={qualB} sys={sysB}
-            onStart={setStartB} onEnd={setEndB} onQual={setQualB} onSys={setSysB}
+            draftStart={draftStartB} draftEnd={draftEndB}
+            hasPending={hasPendingB}
+            onDraftStart={setDraftStartB} onDraftEnd={setDraftEndB}
+            onApply={applyB}
+            qual={qualB} sys={sysB}
+            onQual={setQualB} onSys={setSysB}
           />
         </div>
 
@@ -256,17 +341,17 @@ export default function ComparativosPage() {
             sections={[{
               title: `KPIs Comparativos — A: ${labelA} vs B: ${labelB}`,
               columns: [
-                { key: 'indicador', label: 'Indicador',     type: 'text' },
-                { key: 'aFmt',      label: `A (${labelA})`, type: 'text' },
-                { key: 'bFmt',      label: `B (${labelB})`, type: 'text' },
-                { key: 'delta',     label: 'Δ %',           type: 'text' },
+                { key: 'indicador', label: 'Indicador',      type: 'text' },
+                { key: 'aFmt',      label: `A (${labelA})`,  type: 'text' },
+                { key: 'bFmt',      label: `B (${labelB})`,  type: 'text' },
+                { key: 'delta',     label: 'Δ %',            type: 'text' },
               ],
               rows: [
-                { indicador: 'Faturamento',  aFmt: BRLFULL(kpiA.revenue),          bFmt: BRLFULL(kpiB.revenue),          delta: pctDelta(kpiA.revenue, kpiB.revenue) != null ? `${pctDelta(kpiA.revenue, kpiB.revenue).toFixed(1)}%` : '-' },
-                { indicador: 'Líquido',      aFmt: BRLFULL(kpiA.profitLiquido),    bFmt: BRLFULL(kpiB.profitLiquido),    delta: pctDelta(kpiA.profitLiquido, kpiB.profitLiquido) != null ? `${pctDelta(kpiA.profitLiquido, kpiB.profitLiquido).toFixed(1)}%` : '-' },
-                { indicador: '% Margem',     aFmt: `${kpiA.margin.toFixed(2)}%`,   bFmt: `${kpiB.margin.toFixed(2)}%`,   delta: '-' },
-                { indicador: 'Passageiros',  aFmt: kpiA.uniquePassengers.toLocaleString('pt-BR'), bFmt: kpiB.uniquePassengers.toLocaleString('pt-BR'), delta: pctDelta(kpiA.uniquePassengers, kpiB.uniquePassengers) != null ? `${pctDelta(kpiA.uniquePassengers, kpiB.uniquePassengers).toFixed(1)}%` : '-' },
-                { indicador: 'Nº Vendas',    aFmt: kpiA.uniqueSales.toLocaleString('pt-BR'),      bFmt: kpiB.uniqueSales.toLocaleString('pt-BR'),      delta: pctDelta(kpiA.uniqueSales, kpiB.uniqueSales) != null ? `${pctDelta(kpiA.uniqueSales, kpiB.uniqueSales).toFixed(1)}%` : '-' },
+                { indicador: 'Faturamento', aFmt: BRLFULL(kpiA.revenue),       bFmt: BRLFULL(kpiB.revenue),       delta: pctDelta(kpiA.revenue, kpiB.revenue) != null          ? `${pctDelta(kpiA.revenue, kpiB.revenue).toFixed(1)}%`          : '-' },
+                { indicador: 'Líquido',     aFmt: BRLFULL(kpiA.profitLiquido), bFmt: BRLFULL(kpiB.profitLiquido), delta: pctDelta(kpiA.profitLiquido, kpiB.profitLiquido) != null ? `${pctDelta(kpiA.profitLiquido, kpiB.profitLiquido).toFixed(1)}%` : '-' },
+                { indicador: '% Margem',    aFmt: `${kpiA.margin.toFixed(2)}%`,bFmt: `${kpiB.margin.toFixed(2)}%`,delta: '-' },
+                { indicador: 'Passageiros', aFmt: kpiA.uniquePassengers.toLocaleString('pt-BR'), bFmt: kpiB.uniquePassengers.toLocaleString('pt-BR'), delta: pctDelta(kpiA.uniquePassengers, kpiB.uniquePassengers) != null ? `${pctDelta(kpiA.uniquePassengers, kpiB.uniquePassengers).toFixed(1)}%` : '-' },
+                { indicador: 'Nº Vendas',   aFmt: kpiA.uniqueSales.toLocaleString('pt-BR'),      bFmt: kpiB.uniqueSales.toLocaleString('pt-BR'),      delta: pctDelta(kpiA.uniqueSales, kpiB.uniqueSales) != null          ? `${pctDelta(kpiA.uniqueSales, kpiB.uniqueSales).toFixed(1)}%`          : '-' },
               ],
             }]}
           />
@@ -309,17 +394,17 @@ export default function ComparativosPage() {
           <p className="text-xs text-slate-400 py-10 text-center">Sem dados para comparar.</p>
         ) : (
           <div ref={segChartRef}>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={segmentChart} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis tickFormatter={BRLk} tick={{ fontSize: 10 }} width={58} />
-              <Tooltip formatter={(v, name) => [BRLFULL(v), `Período ${name}`]} />
-              <Legend wrapperStyle={{ fontSize: 12 }} formatter={name => `Período ${name} — ${name === 'A' ? labelA : labelB}`} />
-              <Bar dataKey="A" fill="#3b82f6" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="B" fill="#94a3b8" radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={segmentChart} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <YAxis tickFormatter={BRLk} tick={{ fontSize: 10 }} width={58} />
+                <Tooltip formatter={(v, name) => [BRLFULL(v), `Período ${name}`]} />
+                <Legend wrapperStyle={{ fontSize: 12 }} formatter={name => `Período ${name} — ${name === 'A' ? labelA : labelB}`} />
+                <Bar dataKey="A" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="B" fill="#94a3b8" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         )}
       </div>
@@ -335,39 +420,41 @@ export default function ComparativosPage() {
             <p className="text-xs text-slate-400 mt-0.5">Ordenado por volume total (A + B)</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-          <div className="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-medium">
-            {DIM_OPTS.map((o, i) => (
-              <button
-                key={o.value}
-                onClick={() => setDim(o.value)}
-                className={`px-3 py-1.5 transition-colors ${i > 0 ? 'border-l border-slate-200' : ''} ${dim === o.value ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-          <ExportButton
-            title={`Comparativo por ${dimLabel}`}
-            slug="comp-dimensao"
-            sections={[{
-              title: `Comparativo por ${dimLabel}`,
-              columns: [
-                { key: 'name', label: dimLabel,         type: 'text'     },
-                { key: 'fatA', label: `Fat. A`,         type: 'currency', total: true },
-                { key: 'fatB', label: `Fat. B`,         type: 'currency', total: true },
-                { key: 'liqA', label: `Líq. A`,         type: 'currency', total: true },
-                { key: 'liqB', label: `Líq. B`,         type: 'currency', total: true },
-                { key: 'pctA', label: `% Marg. A`,      type: 'percent'  },
-                { key: 'pctB', label: `% Marg. B`,      type: 'percent'  },
-              ],
-              rows: dimTable.map(({ name, ra, rb }) => ({
-                name:  dim === 'segment' ? (SEGMENT_CFG[name]?.label || name) : name,
-                fatA:  ra.revenue,       fatB: rb.revenue,
-                liqA:  ra.profitLiquido, liqB: rb.profitLiquido,
-                pctA:  ra.rentPct,       pctB: rb.rentPct,
-              })),
-            }]}
-          />
+            <div className="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-medium">
+              {DIM_OPTS.map((o, i) => (
+                <button
+                  key={o.value}
+                  onClick={() => setDim(o.value)}
+                  className={`px-3 py-1.5 transition-colors ${i > 0 ? 'border-l border-slate-200' : ''} ${
+                    dim === o.value ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <ExportButton
+              title={`Comparativo por ${dimLabel}`}
+              slug="comp-dimensao"
+              sections={[{
+                title: `Comparativo por ${dimLabel}`,
+                columns: [
+                  { key: 'name', label: dimLabel,    type: 'text'     },
+                  { key: 'fatA', label: `Fat. A`,    type: 'currency', total: true },
+                  { key: 'fatB', label: `Fat. B`,    type: 'currency', total: true },
+                  { key: 'liqA', label: `Líq. A`,    type: 'currency', total: true },
+                  { key: 'liqB', label: `Líq. B`,    type: 'currency', total: true },
+                  { key: 'pctA', label: `% Marg. A`, type: 'percent'  },
+                  { key: 'pctB', label: `% Marg. B`, type: 'percent'  },
+                ],
+                rows: dimTable.map(({ name, ra, rb }) => ({
+                  name:  dim === 'segment' ? (SEGMENT_CFG[name]?.label || name) : name,
+                  fatA:  ra.revenue,       fatB: rb.revenue,
+                  liqA:  ra.profitLiquido, liqB: rb.profitLiquido,
+                  pctA:  ra.rentPct,       pctB: rb.rentPct,
+                })),
+              }]}
+            />
           </div>
         </div>
 
@@ -391,34 +478,30 @@ export default function ComparativosPage() {
                 </tr>
               </thead>
               <tbody>
-                {dimTable.map(({ name, ra, rb }, i) => {
-                  const revUp  = ra.revenue > rb.revenue;
-                  const liqUp  = ra.profitLiquido > rb.profitLiquido;
-                  return (
-                    <tr key={name} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="py-2 pr-3 text-slate-400">{i + 1}</td>
-                      <td className="py-2 pr-3 font-medium text-slate-700 max-w-[14rem] truncate" title={name}>
-                        {dim === 'segment' ? (SEGMENT_CFG[name]?.label || name) : name}
-                      </td>
-                      <td className="py-2 pr-3 text-right text-slate-700 tabular-nums">{BRLFULL(ra.revenue)}</td>
-                      <td className="py-2 pr-3 text-right text-slate-400 tabular-nums">{BRLFULL(rb.revenue)}</td>
-                      <td className="py-2 pr-3 text-right"><DeltaCell a={ra.revenue} b={rb.revenue} /></td>
-                      <td className={`py-2 pr-3 text-right font-semibold tabular-nums ${ra.profitLiquido < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
-                        {BRLFULL(ra.profitLiquido)}
-                      </td>
-                      <td className={`py-2 pr-3 text-right tabular-nums ${rb.profitLiquido < 0 ? 'text-red-400' : 'text-slate-400'}`}>
-                        {BRLFULL(rb.profitLiquido)}
-                      </td>
-                      <td className="py-2 pr-3 text-right"><DeltaCell a={ra.profitLiquido} b={rb.profitLiquido} /></td>
-                      <td className={`py-2 pr-3 text-right font-semibold tabular-nums ${ra.rentPct !== null && ra.rentPct < 0 ? 'text-red-600' : 'text-slate-700'}`}>
-                        {ra.rentPct !== null ? `${ra.rentPct.toFixed(1)}%` : '—'}
-                      </td>
-                      <td className={`py-2 text-right tabular-nums ${rb.rentPct !== null && rb.rentPct < 0 ? 'text-red-400' : 'text-slate-400'}`}>
-                        {rb.rentPct !== null ? `${rb.rentPct.toFixed(1)}%` : '—'}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {dimTable.map(({ name, ra, rb }, i) => (
+                  <tr key={name} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="py-2 pr-3 text-slate-400">{i + 1}</td>
+                    <td className="py-2 pr-3 font-medium text-slate-700 max-w-[14rem] truncate" title={name}>
+                      {dim === 'segment' ? (SEGMENT_CFG[name]?.label || name) : name}
+                    </td>
+                    <td className="py-2 pr-3 text-right text-slate-700 tabular-nums">{BRLFULL(ra.revenue)}</td>
+                    <td className="py-2 pr-3 text-right text-slate-400 tabular-nums">{BRLFULL(rb.revenue)}</td>
+                    <td className="py-2 pr-3 text-right"><DeltaCell a={ra.revenue} b={rb.revenue} /></td>
+                    <td className={`py-2 pr-3 text-right font-semibold tabular-nums ${ra.profitLiquido < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                      {BRLFULL(ra.profitLiquido)}
+                    </td>
+                    <td className={`py-2 pr-3 text-right tabular-nums ${rb.profitLiquido < 0 ? 'text-red-400' : 'text-slate-400'}`}>
+                      {BRLFULL(rb.profitLiquido)}
+                    </td>
+                    <td className="py-2 pr-3 text-right"><DeltaCell a={ra.profitLiquido} b={rb.profitLiquido} /></td>
+                    <td className={`py-2 pr-3 text-right font-semibold tabular-nums ${ra.rentPct !== null && ra.rentPct < 0 ? 'text-red-600' : 'text-slate-700'}`}>
+                      {ra.rentPct !== null ? `${ra.rentPct.toFixed(1)}%` : '—'}
+                    </td>
+                    <td className={`py-2 text-right tabular-nums ${rb.rentPct !== null && rb.rentPct < 0 ? 'text-red-400' : 'text-slate-400'}`}>
+                      {rb.rentPct !== null ? `${rb.rentPct.toFixed(1)}%` : '—'}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

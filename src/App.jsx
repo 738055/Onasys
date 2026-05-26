@@ -259,7 +259,7 @@ export default function App() {
             {activeTab === 'sales'        && <SalesPage        rows={rows} />}
             {activeTab === 'services'     && <ServicesPage     rows={rows} />}
             {activeTab === 'geo'          && <GeoPage          rows={rows} />}
-            {activeTab === 'comparativos'  && <ComparativosPage />}
+            {activeTab === 'comparativos'  && <ComparativosPage qualPeriodo={qualPeriodo} nSistema={nSistema} />}
             {activeTab === 'intelligence'  && <IntelligencePage rows={rows} />}
             {activeTab === 'clientes'      && <ClientsPage rows={rows} />}
           </>
