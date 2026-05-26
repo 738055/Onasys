@@ -18,18 +18,18 @@ export function useDashboardData({ startDate, endDate, qualPeriodo, nSistema }) 
     });
 
     let apiPrefix = '';
+    const hostname = window.location.hostname;
 
-    // Se estiver rodando no servidor local (localhost), precisamos do nome da aplicação no IIS
-    if (window.location.hostname === 'localhost') {
+    // Deteta se é 'localhost', um IP (ex: 192.168.25.240) ou um nome de PC interno (sem pontos)
+    const isLocalOuIP = hostname === 'localhost' || /^[0-9.]+$/.test(hostname) || !hostname.includes('.');
+
+    // Se for acesso interno/local, precisamos do nome da aplicação no IIS (ex: /wrbhomologa)
+    if (isLocalOuIP) {
         const pastas = window.location.pathname.split('/');
-        // O split de "/wrbhomologa/Dashboard/..." gera um array: ["", "wrbhomologa", "Dashboard", ...]
-        // Pegamos o índice 1, que será sempre o nome do sistema no IIS ('wrbhomologa' ou 'WRB')
         if (pastas.length > 1 && pastas[1] !== '') {
             apiPrefix = '/' + pastas[1]; 
         }
     }
-    // NOTA: Se NÃO for localhost (ex: wrb.homologa...), o apiPrefix continua vazio (''),
-    // apontando perfeitamente para a raiz do domínio.
 
     // Monta a URL cravada na pasta proxy da raiz da aplicação
     const endpoint = import.meta.env.DEV 
@@ -38,7 +38,6 @@ export function useDashboardData({ startDate, endDate, qualPeriodo, nSistema }) 
 
     fetch(endpoint, { signal: controller.signal })
       .then(async r => {
-        // ... restante do código
         if (!r.ok) {
           return r.json()
             .then(body => { throw new Error(body?.error || `HTTP ${r.status}`); })
