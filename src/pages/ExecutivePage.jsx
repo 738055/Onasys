@@ -8,8 +8,8 @@ import { TrendingUp, DollarSign, Percent, Users, ShoppingCart, CreditCard, Chevr
 import { KPICard } from '../components/KPICard';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { ExportButton } from '../components/ExportButton';
-import { calcKPIs, groupByMonth, topNByField, groupByClientOrVendor, groupByMonthAndField } from '../utils/aggregations';
-import { BRLFULL, BRLk, SEGMENT_CFG } from '../utils/format';
+import { calcKPIs, groupByMonth, topNByField, groupByClientOrVendor, groupByMonthAndField, lossDiagnosticTotals } from '../utils/aggregations';
+import { BRLFULL, BRLk, SEGMENT_CFG, resolveLossReason } from '../utils/format';
 import { useExportContext } from '../contexts/ExportContext';
 import { useYearData } from '../hooks/useYearData';
 import { PaxAuditModal } from '../components/PaxAuditModal';
@@ -100,6 +100,15 @@ export default function ExecutivePage({ rows }) {
 
   // Filtered-period computations (KPIs, exports)
   const kpis         = useMemo(() => calcKPIs(rows), [rows]);
+  // Diagnóstico de perda para callout executivo
+  const lossDiag     = useMemo(() => lossDiagnosticTotals(rows), [rows]);
+  const lossInsight  = useMemo(() => {
+    if (!lossDiag.length) return null;
+    const totalLoss = lossDiag.reduce((s, g) => s + g.absloss, 0);
+    if (totalLoss === 0) return null;
+    const top = lossDiag[0]; // já ordenado por absloss desc
+    return { top, totalLoss, lossDiag };
+  }, [lossDiag]);
   const timeline     = useMemo(() =>
     groupByMonth(rows).map(m => ({
       ...m,
@@ -215,6 +224,44 @@ export default function ExecutivePage({ rows }) {
           />
         </div>
       </div>
+
+      {/* ── Callout de diagnóstico de perda — só aparece quando há prejuízo ── */}
+      {lossInsight && (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50 text-xs">
+          <span className="text-lg">⚠️</span>
+          <div className="flex-1 min-w-0">
+            <span className="font-semibold text-amber-800">
+              Principal causa de perdas no período:{' '}
+              <span style={{ color: lossInsight.top.color }}>{lossInsight.top.group}</span>
+              {' '}({lossInsight.top.share.toFixed(0)}% — {BRLFULL(-lossInsight.top.absloss)})
+            </span>
+            <span className="text-amber-600 ml-2">
+              {lossInsight.top.group === 'Venda'
+                ? '→ Revisar precificação dos emissores'
+                : lossInsight.top.group === 'Escala'
+                ? '→ Auditar custo operacional das escalas deficitárias'
+                : lossInsight.top.group === 'Financeira'
+                ? '→ Revisar exposição a taxas de cartão e provisões'
+                : lossInsight.top.group === 'Comercial'
+                ? '→ Revisar repasses, comissões e descontos concedidos'
+                : '→ Ver diagnóstico completo em Margens'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {lossInsight.lossDiag.map(g => (
+              <div
+                key={g.group}
+                className="flex items-center gap-0.5 text-[10px] font-medium whitespace-nowrap px-1.5 py-0.5 rounded-full"
+                style={{ background: g.color + '20', color: g.color }}
+                title={`${g.group}: ${BRLFULL(-g.absloss)} (${g.items} itens)`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: g.color }} />
+                {g.group} {g.share.toFixed(0)}%
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Monthly Revenue + Margin combo */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">

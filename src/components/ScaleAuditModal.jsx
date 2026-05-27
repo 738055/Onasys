@@ -204,10 +204,9 @@ export function ScaleAuditModal({ rows, idEscala, onClose }) {
                       <span className="block text-[9px] text-slate-400 font-normal">fat − net − escala</span>
                     </th>
                     <th className="pb-2 pr-3 font-semibold text-right whitespace-nowrap">Resultado AB</th>
-                    <th className="pb-2 pr-3 font-semibold whitespace-nowrap">Origem API</th>
                     <th className="pb-2 font-semibold whitespace-nowrap">
-                      Veredito
-                      <span className="block text-[9px] text-slate-400 font-normal">causa real</span>
+                      Diagnóstico
+                      <span className="block text-[9px] text-slate-400 font-normal">causa real do resultado</span>
                     </th>
                   </tr>
                 </thead>
@@ -217,7 +216,6 @@ export function ScaleAuditModal({ rows, idEscala, onClose }) {
                     const scale    = r.costScale   || 0;
                     const gapNet   = r.revenue - net;              // positivo = cobriu o fornecedor
                     const gapTotal = r.revenue - net - scale;      // positivo = cobriu NET+Escala
-                    const cfg      = resolveLossReason(r.lossReason);
                     const rowBg    = r.profit >= 0 ? 'bg-emerald-50/60' : 'bg-red-50/60';
 
                     // Veredito independente da classificação da API:
@@ -263,19 +261,6 @@ export function ScaleAuditModal({ rows, idEscala, onClose }) {
                         <td className={`py-2 pr-3 text-right tabular-nums font-bold ${r.profit < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                           {BRLFULL(r.profit)}
                         </td>
-                        <td className="py-2 pr-3">
-                          {r.lossReason ? (
-                            <span
-                              className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold text-white whitespace-nowrap"
-                              style={{ background: cfg.color }}
-                              title={cfg.label}
-                            >
-                              {cfg.short}
-                            </span>
-                          ) : (
-                            <span className="text-slate-300">—</span>
-                          )}
-                        </td>
                         <td className="py-2">
                           <span
                             className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap border"
@@ -305,7 +290,7 @@ export function ScaleAuditModal({ rows, idEscala, onClose }) {
                     <td className={`pt-2 pr-3 text-right tabular-nums ${profit < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
                       {BRLFULL(profit)}
                     </td>
-                    <td /><td />
+                    <td />
                   </tr>
                 </tfoot>
               </table>

@@ -331,6 +331,32 @@ export function escalaDeepDive(rows) {
   };
 }
 
+// Evolução mensal das origens do prejuízo (valores absolutos para BarChart empilhado).
+// Retorna { data: [{ month, label, Venda, Escala, Financeira, Comercial, Outro }], groups }
+export function groupLossReasonByMonth(rows) {
+  const lossRows = rows.filter(r => r.profit < 0 && r.emissionDate);
+  const map = {};
+  const groupsSet = new Set();
+  for (const r of lossRows) {
+    const d   = r.emissionDate;
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const { group } = resolveLossReason(r.lossReason);
+    groupsSet.add(group);
+    if (!map[key]) map[key] = { month: key };
+    map[key][group] = (map[key][group] || 0) + Math.abs(r.profit || 0);
+  }
+  // Ordena por mês e preenche zeros para grupos ausentes
+  const groups = LOSS_GROUP_ORDER.filter(g => groupsSet.has(g));
+  const data   = Object.values(map)
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .map(m => {
+      const entry = { ...m };
+      groups.forEach(g => { if (!entry[g]) entry[g] = 0; });
+      return entry;
+    });
+  return { data, groups };
+}
+
 // Agrupa todos os itens por idEscala (exclui escala 0 = sem escala operacional).
 // Retorna um mapa { [idEscala]: { idEscala, product, supplier, checkinDate, items[], revenue, costBaseNet, costScale, profit } }.
 // Usado pelo ScaleAuditModal para exibir TODOS os itens de uma escala (incluindo lucrativos)

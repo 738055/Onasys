@@ -7,7 +7,7 @@ import { abcCurve, groupByClientOrVendor } from '../utils/aggregations';
 import { BRLFULL, BRLk, PCTFMT } from '../utils/format';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { ExportButton } from '../components/ExportButton';
-import { PaxCompositionBar, PaxBreakdownChips } from '../components/PaxCompositionBar';
+import { PaxCompositionBar } from '../components/PaxCompositionBar';
 
 const PAGE_SIZE = 25;
 
@@ -34,36 +34,6 @@ function VendorTooltip({ active, payload }) {
 }
 
 // Tooltip de composição de pax — aparece ao hover sobre a célula Pax da tabela detalhada
-function PaxPopover({ row }) {
-  const [open, setOpen] = useState(false);
-  const breakdown = {
-    adt: row.paxAdt, chd: row.paxChd, colo: row.paxColo,
-    red: row.paxRed, sen: row.paxSen, free: row.paxFree,
-  };
-  const hasBreakdown = (row.paxAdt + row.paxChd + row.paxColo + row.paxRed + row.paxSen + row.paxFree) > 0;
-  return (
-    <span
-      className="relative inline-block cursor-default"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
-      <span className={`${hasBreakdown ? 'underline decoration-dotted decoration-slate-400' : ''}`}>
-        {row.passengers || '—'}
-      </span>
-      {hasBreakdown && open && (
-        <div className="absolute z-30 bottom-full left-1/2 -translate-x-1/2 mb-1.5 bg-white border border-slate-200 rounded-lg p-2.5 shadow-lg min-w-[140px]">
-          <p className="text-[10px] font-semibold text-slate-600 mb-1.5">Composição</p>
-          <PaxBreakdownChips breakdown={breakdown} className="flex-col gap-1" />
-          <div className="mt-1.5">
-            <PaxCompositionBar breakdown={breakdown} height={5} showLabels={false} />
-          </div>
-          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0
-            border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-slate-200" />
-        </div>
-      )}
-    </span>
-  );
-}
 
 export default function SalesPage({ rows }) {
   const [page, setPage] = useState(0);
@@ -294,8 +264,8 @@ export default function SalesPage({ rows }) {
                   <td className="py-2 pr-3 max-w-[8rem] truncate">{r.client}</td>
                   <td className="py-2 pr-3 max-w-[8rem] truncate">{r.supplier}</td>
                   <td className="py-2 pr-3 max-w-[6rem] truncate">{r.vendor}</td>
-                  <td className="py-2 pr-3 text-center tabular-nums">
-                    <PaxPopover row={r} />
+                  <td className="py-2 pr-3 text-center tabular-nums text-slate-600">
+                    {r.passengers || '—'}
                   </td>
                   <td className="py-2 pr-3 text-right">{BRLFULL(r.revenue)}</td>
                   <td className={`py-2 text-right font-semibold ${r.profitLiquido < 0 ? 'text-red-600' : 'text-emerald-700'}`}>

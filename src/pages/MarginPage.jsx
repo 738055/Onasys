@@ -2,9 +2,24 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import {
   ResponsiveContainer, ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
-  BarChart, Bar, Cell, LineChart, Line, Legend,
+  BarChart, Bar, Cell, LineChart, Line, Legend, LabelList,
 } from 'recharts';
-import { scatterBySupplier, scatterByVendor, groupByLossReason, lossDiagnosticTotals, escalaDeepDive } from '../utils/aggregations';
+
+const MONTHS_SHORT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+function fmtMonthKey(key) {
+  const [y, m] = key.split('-');
+  return `${MONTHS_SHORT[Number(m) - 1]}/${y.slice(2)}`;
+}
+
+// Cores por grupo de origem
+const GROUP_COLORS = {
+  Venda:      '#dc2626',
+  Escala:     '#f97316',
+  Financeira: '#f59e0b',
+  Comercial:  '#3b82f6',
+  Outro:      '#94a3b8',
+};
+import { scatterBySupplier, scatterByVendor, groupByLossReason, lossDiagnosticTotals, escalaDeepDive, groupLossReasonByMonth } from '../utils/aggregations';
 import { supplierMarginTrend } from '../utils/supplierConcentration';
 import { BRLFULL, BRLk, resolveLossReason } from '../utils/format';
 import { InfoTooltip } from '../components/InfoTooltip';
@@ -82,6 +97,7 @@ export default function MarginPage({ rows }) {
   const lossReasonData = useMemo(() => groupByLossReason(rows),           [rows]);
   const diagnostics    = useMemo(() => lossDiagnosticTotals(rows),        [rows]);
   const escalaDive     = useMemo(() => escalaDeepDive(rows),              [rows]);
+  const lossTrend      = useMemo(() => groupLossReasonByMonth(rows),      [rows]);
 
   const totalPrejuizo  = useMemo(() => losses.reduce((s, r) => s + r.profit, 0), [losses]);
   const piorResultado  = useMemo(() => losses.length > 0 ? losses[0].profit : 0, [losses]);
@@ -276,93 +292,137 @@ export default function MarginPage({ rows }) {
           {/* ── Sub-card: Causa Raiz das Falhas de Escala ── */}
           {escalaDive && (
             <div className="mt-5 border-t border-slate-100 pt-5">
-              <h3 className="text-xs font-semibold text-slate-600 flex items-center gap-1 mb-3">
-                🔎 Causa Raiz — Falhas de Escala
-                <InfoTooltip text={
-                  'Decompõe os itens classificados como "Falha na Escala" em duas sub-causas:\n' +
-                  '① Preço abaixo do NET → a venda foi mal feita (o emissor vendeu abaixo do custo do fornecedor, independente da escala)\n' +
-                  '② Preço cobriu o NET mas não a escala → o custo operacional (guia/transporte) consumiu a margem\n\n' +
-                  'Também mostra quantas escalas são deficitárias como UNIDADE vs escalas que têm itens negativos mas são lucrativas no total (problema de alocação interna).'
-                } />
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-semibold text-slate-600 flex items-center gap-1">
+                  🔎 Causa Raiz — Falhas de Escala
+                  <InfoTooltip text="Decompõe os itens 'Falha na Escala' em duas sub-causas: ① Preço abaixo do NET (emissor vendeu abaixo do custo do fornecedor — problema é a VENDA, não a escala); ② Custo operacional consumiu a margem (preço cobriu o fornecedor, mas guia/transporte zeraram o resultado). Escala deficitária = a operação inteira é inviável. Escala mista = escala lucrativa no total mas com itens negativos por alocação proporcional." />
+                </h3>
+                <span className="text-[10px] text-slate-400">{escalaDive.scaleCount} escala{escalaDive.scaleCount !== 1 ? 's' : ''} envolvida{escalaDive.scaleCount !== 1 ? 's' : ''} · {escalaDive.total} itens</span>
+              </div>
+
+              {/* Split bar principal — a visual mais importante */}
+              {escalaDive.total > 0 && (() => {
+                const pctAbaixo = escalaDive.belowNet / escalaDive.total * 100;
+                const pctEscala = escalaDive.aboveNet / escalaDive.total * 100;
+                return (
+                  <div className="mb-4">
+                    <div className="flex h-8 rounded-lg overflow-hidden text-xs font-semibold">
+                      {pctAbaixo > 0 && (
+                        <div
+                          className="flex items-center justify-center text-white transition-all"
+                          style={{ width: `${pctAbaixo}%`, background: '#dc2626' }}
+                          title={`Preço < NET do fornecedor: ${escalaDive.belowNet} itens (${pctAbaixo.toFixed(0)}%)`}
+                        >
+                          {pctAbaixo >= 15 && `${pctAbaixo.toFixed(0)}%`}
+                        </div>
+                      )}
+                      {pctEscala > 0 && (
+                        <div
+                          className="flex items-center justify-center text-white transition-all"
+                          style={{ width: `${pctEscala}%`, background: '#f97316' }}
+                          title={`Custo operacional alto: ${escalaDive.aboveNet} itens (${pctEscala.toFixed(0)}%)`}
+                        >
+                          {pctEscala >= 15 && `${pctEscala.toFixed(0)}%`}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex justify-between mt-1.5 text-[10px]">
+                      <div className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-sm inline-block" style={{ background: '#dc2626' }} />
+                        <span className="text-slate-600 font-medium">① Preço &lt; NET</span>
+                        <span className="text-red-600 font-bold ml-1">{escalaDive.belowNet} itens</span>
+                        <span className="text-red-400 ml-1">({BRLFULL(escalaDive.belowNetLoss)})</span>
+                        <span className="text-slate-400 ml-1 italic">→ revisar precificação</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-400 italic">revisar custo operacional ←</span>
+                        <span className="text-orange-400 mr-1">({BRLFULL(escalaDive.aboveNetLoss)})</span>
+                        <span className="text-orange-600 font-bold mr-1">{escalaDive.aboveNet} itens</span>
+                        <span className="text-slate-600 font-medium">② Escala cara</span>
+                        <span className="w-2 h-2 rounded-sm inline-block" style={{ background: '#f97316' }} />
+                      </div>
+                    </div>
+                    {escalaDive.avgCoverage !== null && escalaDive.aboveNet > 0 && (
+                      <p className="text-[10px] text-slate-400 mt-1 text-center">
+                        Cobertura média da escala nos itens ②: <strong className="text-orange-600">{(escalaDive.avgCoverage * 100).toFixed(0)}%</strong>
+                        {' '}— o restante ({(100 - escalaDive.avgCoverage * 100).toFixed(0)}%) não foi coberto pelo preço praticado
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Escala-level stats */}
+              <div className="flex items-center gap-6 text-[11px] py-2 px-3 bg-slate-50 rounded-lg">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
+                  <span className="text-slate-600">
+                    <strong className="text-amber-700">{escalaDive.deficitScaleCount}</strong> escala{escalaDive.deficitScaleCount !== 1 ? 's' : ''} deficitária{escalaDive.deficitScaleCount !== 1 ? 's' : ''}
+                    <span className="text-slate-400 ml-1">/ {escalaDive.scaleCount} total</span>
+                  </span>
+                  <span className="text-slate-300 mx-1">|</span>
+                  <span className="text-slate-500 italic text-[10px]">operação inviável no total</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-400 inline-block" />
+                  <span className="text-slate-600">
+                    <strong className="text-blue-600">{escalaDive.mixedScaleCount}</strong> escala{escalaDive.mixedScaleCount !== 1 ? 's' : ''} mista{escalaDive.mixedScaleCount !== 1 ? 's' : ''}
+                  </span>
+                  <span className="text-slate-500 italic text-[10px]">— escala lucrativa, itens negativos por alocação de custo</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Trend temporal das origens ── */}
+          {lossTrend.data.length >= 2 && (
+            <div className="mt-5 border-t border-slate-100 pt-5">
+              <h3 className="text-xs font-semibold text-slate-600 flex items-center gap-1 mb-1">
+                Evolução Mensal das Origens do Prejuízo
+                <InfoTooltip text="Barras empilhadas: prejuízo total por mês, colorido por origem. Permite ver se o problema está melhorando ou piorando, e qual causa domina cada mês. Apenas itens com resultado negativo, agrupados por data de emissão." />
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-
-                {/* Sub-causa 1: Preço < NET */}
-                <div className={`rounded-lg p-3 border ${escalaDive.belowNet > 0 ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'}`}>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-red-600 mb-1">
-                    ① Preço abaixo do NET
-                  </p>
-                  <p className="text-lg font-bold tabular-nums text-red-700">{escalaDive.belowNet.toLocaleString('pt-BR')}</p>
-                  <p className="text-[10px] text-red-500 leading-tight mt-0.5">
-                    {escalaDive.total > 0 ? `${(escalaDive.belowNet / escalaDive.total * 100).toFixed(0)}% dos itens Escala` : ''}
-                  </p>
-                  <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
-                    O emissor vendeu <strong>abaixo do custo do fornecedor</strong> — problema de venda, não de escala
-                  </p>
-                  {escalaDive.belowNet > 0 && (
-                    <p className="text-[10px] text-red-600 font-semibold mt-1 tabular-nums">
-                      {BRLFULL(escalaDive.belowNetLoss)}
-                    </p>
-                  )}
-                </div>
-
-                {/* Sub-causa 2: Preço cobriu NET, não cobriu escala */}
-                <div className={`rounded-lg p-3 border ${escalaDive.aboveNet > 0 ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-200'}`}>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600 mb-1">
-                    ② Custo Operacional Alto
-                  </p>
-                  <p className="text-lg font-bold tabular-nums text-orange-700">{escalaDive.aboveNet.toLocaleString('pt-BR')}</p>
-                  <p className="text-[10px] text-orange-500 leading-tight mt-0.5">
-                    {escalaDive.total > 0 ? `${(escalaDive.aboveNet / escalaDive.total * 100).toFixed(0)}% dos itens Escala` : ''}
-                  </p>
-                  <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
-                    Preço cobriu o fornecedor, mas o <strong>custo da escala operacional</strong> consumiu a margem
-                  </p>
-                  {escalaDive.avgCoverage !== null && (
-                    <p className="text-[10px] text-orange-600 mt-1">
-                      Cobertura média da escala: <strong>{(escalaDive.avgCoverage * 100).toFixed(0)}%</strong>
-                    </p>
-                  )}
-                </div>
-
-                {/* Escalas deficitárias no total */}
-                <div className="rounded-lg p-3 border bg-amber-50 border-amber-200">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 mb-1">
-                    Escalas Deficitárias
-                  </p>
-                  <p className="text-lg font-bold tabular-nums text-amber-700">
-                    {escalaDive.deficitScaleCount}
-                    <span className="text-sm font-normal text-amber-500"> / {escalaDive.scaleCount}</span>
-                  </p>
-                  <p className="text-[10px] text-amber-500 leading-tight mt-0.5">escalas no total</p>
-                  <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
-                    A <strong>escala como unidade</strong> (todos os itens somados) resultou em prejuízo
-                  </p>
-                </div>
-
-                {/* Escalas mistas */}
-                <div className="rounded-lg p-3 border bg-blue-50 border-blue-200">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-600 mb-1">
-                    Escalas Mistas
-                  </p>
-                  <p className="text-lg font-bold tabular-nums text-blue-700">{escalaDive.mixedScaleCount}</p>
-                  <p className="text-[10px] text-blue-500 leading-tight mt-0.5">
-                    {escalaDive.scaleCount > 0 ? `de ${escalaDive.scaleCount} escalas` : ''}
-                  </p>
-                  <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
-                    Escala <strong>lucrativa no total</strong>, mas tem itens negativos — problema de alocação interna do custo
-                  </p>
-                </div>
-
-              </div>
-
-              {/* Legenda interpretativa */}
-              <div className="mt-3 p-2.5 bg-slate-50 rounded-lg text-[10px] text-slate-500 leading-relaxed">
-                <span className="font-semibold text-slate-600">Como interpretar: </span>
-                Se ① predomina → revisar treinamento de precificação dos emissores / política de mínimo de venda.
-                Se ② predomina → revisar o custo das operações ou aumentar o preço mínimo por escala.
-                Se "Escalas Mistas" predomina → a escala em si é viável, mas alguns clientes pagam preços baixos que não cobrem a alocação de custo — revisar mix de canais.
-              </div>
+              <p className="text-[10px] text-slate-400 mb-3">
+                Cada mês = soma do prejuízo absoluto por origem — identifique tendências e causas dominantes
+              </p>
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart
+                  data={lossTrend.data.map(d => ({ ...d, label: fmtMonthKey(d.month) }))}
+                  margin={{ top: 4, right: 8, bottom: 0, left: 8 }}
+                  barCategoryGap="25%"
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={v => BRLk(v)} axisLine={false} tickLine={false} width={46} />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null;
+                      const total = payload.reduce((s, p) => s + (p.value || 0), 0);
+                      return (
+                        <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-lg text-xs min-w-[160px]">
+                          <p className="font-semibold text-slate-600 mb-2">{label}</p>
+                          {[...payload].reverse().map(p => (
+                            <div key={p.name} className="flex justify-between gap-4 mb-0.5" style={{ color: p.fill }}>
+                              <span>{p.name}</span>
+                              <span className="font-semibold tabular-nums">{BRLFULL(p.value)}</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between gap-4 mt-1 pt-1 border-t border-slate-100 font-semibold text-slate-700">
+                            <span>Total</span>
+                            <span className="tabular-nums">{BRLFULL(total)}</span>
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Legend
+                    wrapperStyle={{ fontSize: 10, paddingTop: 8 }}
+                    formatter={(v) => <span style={{ color: GROUP_COLORS[v] || '#94a3b8' }}>{v}</span>}
+                  />
+                  {lossTrend.groups.map(g => (
+                    <Bar key={g} dataKey={g} stackId="a" fill={GROUP_COLORS[g] || '#94a3b8'} maxBarSize={36} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           )}
 

@@ -8,7 +8,6 @@ import { BRLFULL, BRLk, PCTFMT, SEGMENT_CFG } from '../utils/format';
 import { KPICard } from '../components/KPICard';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { ExportButton } from '../components/ExportButton';
-import { PaxCompositionBar } from '../components/PaxCompositionBar';
 
 const PAGE_SIZE = 30;
 
@@ -517,8 +516,7 @@ export default function ServicesPage({ rows }) {
           />
         </div>
         <p className="text-[10px] text-slate-400 mb-3">
-          Pax = soma por item (cada ocorrência conta independentemente) &nbsp;·&nbsp;
-          Composição = ADT/CHD/COL/RED/SEN/FREE — passe o mouse sobre a barra para ver detalhes
+          Pax = soma por item (cada ocorrência conta independentemente)
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -528,7 +526,6 @@ export default function ServicesPage({ rows }) {
                 <th className="pb-2 pr-3 font-semibold">Serviço</th>
                 <th className="pb-2 pr-3 font-semibold text-right">Faturamento</th>
                 <th className="pb-2 pr-3 font-semibold text-right">Pax (itens)</th>
-                <th className="pb-2 pr-3 font-semibold text-center">Composição</th>
                 <th className="pb-2 pr-3 font-semibold text-right">Líquido</th>
                 <th className="pb-2 pr-3 font-semibold text-right">% Rent</th>
                 <th className="pb-2 font-semibold text-right">Resultado AB</th>
@@ -536,7 +533,7 @@ export default function ServicesPage({ rows }) {
             </thead>
             <tbody>
               {prodRows.length === 0 && (
-                <tr><td colSpan={8} className="py-8 text-center text-slate-400">Sem dados no período.</td></tr>
+                <tr><td colSpan={7} className="py-8 text-center text-slate-400">Sem dados no período.</td></tr>
               )}
               {prodRows.map((g, i) => {
                 const isNeg   = g.profit < 0;
@@ -549,15 +546,6 @@ export default function ServicesPage({ rows }) {
                     <td className="py-2 pr-3 font-medium text-slate-700 max-w-[20rem] truncate" title={g.name}>{g.name}</td>
                     <td className="py-2 pr-3 text-right text-slate-700">{BRLFULL(g.revenue)}</td>
                     <td className="py-2 pr-3 text-right text-slate-500">{g.passengers.toLocaleString('pt-BR')}</td>
-                    <td className="py-2 pr-3">
-                      {g.paxBreakdown && (
-                        <PaxCompositionBar
-                          breakdown={g.paxBreakdown}
-                          height={6}
-                          className="w-20 mx-auto"
-                        />
-                      )}
-                    </td>
                     <td className={`py-2 pr-3 text-right font-semibold ${liqNeg ? 'text-red-600' : 'text-emerald-700'}`}>
                       {BRLFULL(g.profitLiquido)}
                     </td>
