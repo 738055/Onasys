@@ -7,6 +7,7 @@ import { abcCurve, groupByClientOrVendor } from '../utils/aggregations';
 import { BRLFULL, BRLk, PCTFMT } from '../utils/format';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { ExportButton } from '../components/ExportButton';
+import { PaxCompositionBar, PaxBreakdownChips } from '../components/PaxCompositionBar';
 
 const PAGE_SIZE = 25;
 
@@ -29,6 +30,38 @@ function VendorTooltip({ active, payload }) {
         <div className="flex justify-between gap-4"><span className="text-slate-500">% Margem</span><span className={`font-semibold tabular-nums ${d.marginPct < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{d.marginPct.toFixed(2)}%</span></div>
       </div>
     </div>
+  );
+}
+
+// Tooltip de composição de pax — aparece ao hover sobre a célula Pax da tabela detalhada
+function PaxPopover({ row }) {
+  const [open, setOpen] = useState(false);
+  const breakdown = {
+    adt: row.paxAdt, chd: row.paxChd, colo: row.paxColo,
+    red: row.paxRed, sen: row.paxSen, free: row.paxFree,
+  };
+  const hasBreakdown = (row.paxAdt + row.paxChd + row.paxColo + row.paxRed + row.paxSen + row.paxFree) > 0;
+  return (
+    <span
+      className="relative inline-block cursor-default"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <span className={`${hasBreakdown ? 'underline decoration-dotted decoration-slate-400' : ''}`}>
+        {row.passengers || '—'}
+      </span>
+      {hasBreakdown && open && (
+        <div className="absolute z-30 bottom-full left-1/2 -translate-x-1/2 mb-1.5 bg-white border border-slate-200 rounded-lg p-2.5 shadow-lg min-w-[140px]">
+          <p className="text-[10px] font-semibold text-slate-600 mb-1.5">Composição</p>
+          <PaxBreakdownChips breakdown={breakdown} className="flex-col gap-1" />
+          <div className="mt-1.5">
+            <PaxCompositionBar breakdown={breakdown} height={5} showLabels={false} />
+          </div>
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0
+            border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-slate-200" />
+        </div>
+      )}
+    </span>
   );
 }
 
@@ -261,7 +294,9 @@ export default function SalesPage({ rows }) {
                   <td className="py-2 pr-3 max-w-[8rem] truncate">{r.client}</td>
                   <td className="py-2 pr-3 max-w-[8rem] truncate">{r.supplier}</td>
                   <td className="py-2 pr-3 max-w-[6rem] truncate">{r.vendor}</td>
-                  <td className="py-2 pr-3 text-center">{r.passengers || '-'}</td>
+                  <td className="py-2 pr-3 text-center tabular-nums">
+                    <PaxPopover row={r} />
+                  </td>
                   <td className="py-2 pr-3 text-right">{BRLFULL(r.revenue)}</td>
                   <td className={`py-2 text-right font-semibold ${r.profitLiquido < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
                     {BRLFULL(r.profitLiquido)}
@@ -373,6 +408,10 @@ export default function SalesPage({ rows }) {
                 <th className="pb-2 pr-3 font-semibold text-right">
                   {groupField === 'product' ? 'Pax (itens)' : 'Pax (vendas)'}
                 </th>
+                <th className="pb-2 pr-3 font-semibold text-center">
+                  Composição
+                  <span className="block text-[10px] font-normal text-slate-400 leading-tight">ADT/CHD/…</span>
+                </th>
                 <th className="pb-2 pr-3 font-semibold text-right">Líquido</th>
                 <th className="pb-2 pr-3 font-semibold text-right">% Rent</th>
                 <th className="pb-2 pr-3 font-semibold text-right">
@@ -388,7 +427,7 @@ export default function SalesPage({ rows }) {
             <tbody>
               {grouped.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400">Sem dados no período.</td>
+                  <td colSpan={9} className="py-8 text-center text-slate-400">Sem dados no período.</td>
                 </tr>
               )}
               {grouped.map((g, i) => {
@@ -397,6 +436,11 @@ export default function SalesPage({ rows }) {
                 const liqNeg  = g.profitLiquido < 0;  // cor da célula Líquido (total_liquido)
                 const pctNeg  = g.rentPct !== null && g.rentPct < 0;
                 const paxValue = groupField === 'product' ? g.passengers : g.uniquePassengers;
+                // Para composição: SUM bruto (paxBreakdown) em produto/fornecedor;
+                // dedup único (paxBreakdownUnique) em cliente/emissor.
+                const composition = (groupField === 'product' || groupField === 'supplier')
+                  ? g.paxBreakdown
+                  : g.paxBreakdownUnique;
                 return (
                   <tr
                     key={g.name}
@@ -406,6 +450,15 @@ export default function SalesPage({ rows }) {
                     <td className="py-2 pr-3 font-medium text-slate-700 max-w-[16rem] truncate" title={g.name}>{g.name}</td>
                     <td className="py-2 pr-3 text-right text-slate-700">{BRLFULL(g.revenue)}</td>
                     <td className="py-2 pr-3 text-right text-slate-500">{paxValue.toLocaleString('pt-BR')}</td>
+                    <td className="py-2 pr-3">
+                      {composition && (
+                        <PaxCompositionBar
+                          breakdown={composition}
+                          height={6}
+                          className="w-20 mx-auto"
+                        />
+                      )}
+                    </td>
                     <td className={`py-2 pr-3 text-right font-semibold ${liqNeg ? 'text-red-600' : 'text-emerald-700'}`}>
                       {BRLFULL(g.profitLiquido)}
                     </td>
@@ -436,6 +489,7 @@ export default function SalesPage({ rows }) {
                     <td className="pt-2 pr-3 text-xs">TOTAL</td>
                     <td className="pt-2 pr-3 text-right text-xs">{BRLFULL(totRevenue)}</td>
                     <td className="pt-2 pr-3 text-right text-xs">{totPax.toLocaleString('pt-BR')}</td>
+                    <td className="pt-2 pr-3" />{/* Composição — sem total */}
                     <td className={`pt-2 pr-3 text-right text-xs ${totLiquido < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
                       {BRLFULL(totLiquido)}
                     </td>

@@ -1,3 +1,5 @@
+import { resolveLossReason, LOSS_GROUP_ORDER } from './format.js';
+
 function sum(rows, field) {
   return rows.reduce((acc, r) => acc + (r[field] || 0), 0);
 }
@@ -15,6 +17,95 @@ function uniquePassengersByVenda(rows) {
   return Object.values(vendaMap).reduce((s, v) => s + v, 0);
 }
 
+// Soma bruta de cada categoria de pax por item (para fornecedor/serviço/operação).
+// Retorna o mesmo shape de uniquePaxBreakdownByVenda para intercambialidade.
+export function sumPaxBreakdown(rows) {
+  const bd = { adt: 0, chd: 0, colo: 0, red: 0, sen: 0, free: 0, total: 0 };
+  for (const r of rows) {
+    bd.adt  += r.paxAdt  || 0;
+    bd.chd  += r.paxChd  || 0;
+    bd.colo += r.paxColo || 0;
+    bd.red  += r.paxRed  || 0;
+    bd.sen  += r.paxSen  || 0;
+    bd.free += r.paxFree || 0;
+    bd.total += r.passengers || 0;
+  }
+  return bd;
+}
+
+// Breakdown de pax por venda (dedup via max por venda — igual ao KPI "Passageiros" global).
+// Cada categoria pega o MAX entre os itens da mesma venda (não soma), assim
+// ADT+CHD+...+FREE ≈ uniquePassengersByVenda(rows).
+export function uniquePaxBreakdownByVenda(rows) {
+  const PAX_FIELDS = ['paxAdt', 'paxChd', 'paxColo', 'paxRed', 'paxSen', 'paxFree', 'passengers'];
+  const vendaMap = {};
+  for (const r of rows) {
+    if (!r.id) continue;
+    if (!vendaMap[r.id]) vendaMap[r.id] = {};
+    for (const f of PAX_FIELDS) {
+      const cur = vendaMap[r.id][f];
+      if (cur === undefined || (r[f] || 0) > cur) vendaMap[r.id][f] = r[f] || 0;
+    }
+  }
+  const bd = { adt: 0, chd: 0, colo: 0, red: 0, sen: 0, free: 0, total: 0 };
+  for (const v of Object.values(vendaMap)) {
+    bd.adt  += v.paxAdt  || 0;
+    bd.chd  += v.paxChd  || 0;
+    bd.colo += v.paxColo || 0;
+    bd.red  += v.paxRed  || 0;
+    bd.sen  += v.paxSen  || 0;
+    bd.free += v.paxFree || 0;
+    bd.total += v.passengers || 0;
+  }
+  return bd;
+}
+
+// Agrupa itens por origem do prejuízo.
+// Por padrão filtra apenas itens com profit < 0 (onlyLosses = true).
+// Retorna array ordenado pelo maior prejuízo absoluto, pronto para BarChart.
+export function groupByLossReason(rows, { onlyLosses = true } = {}) {
+  const source = onlyLosses ? rows.filter(r => r.profit < 0) : rows;
+  const totalLoss = source.reduce((s, r) => s + (r.profit || 0), 0); // negativo
+  const map = {};
+  for (const r of source) {
+    const cfg = resolveLossReason(r.lossReason);
+    const key = cfg.label;
+    if (!map[key]) map[key] = { reason: cfg.label, group: cfg.group, color: cfg.color, short: cfg.short, items: 0, revenue: 0, loss: 0 };
+    map[key].items   += 1;
+    map[key].revenue += r.revenue || 0;
+    map[key].loss    += r.profit  || 0;   // negativo
+  }
+  return Object.values(map)
+    .map(g => ({
+      ...g,
+      absloss: Math.abs(g.loss),
+      share: totalLoss !== 0 ? (g.loss / totalLoss) * 100 : 0,
+    }))
+    .sort((a, b) => b.absloss - a.absloss);
+}
+
+// Totais por GRUPO (Venda/Escala/Financeira/Comercial/Outro).
+// Útil para mini-KPIs laterais ao BarChart de origens do prejuízo.
+export function lossDiagnosticTotals(rows) {
+  const lossRows = rows.filter(r => r.profit < 0);
+  const totalLoss = lossRows.reduce((s, r) => s + (r.profit || 0), 0);
+  const map = {};
+  for (const r of lossRows) {
+    const { group, color } = resolveLossReason(r.lossReason);
+    if (!map[group]) map[group] = { group, color, items: 0, loss: 0 };
+    map[group].items += 1;
+    map[group].loss  += r.profit || 0;
+  }
+  // Retorna na ordem definida (Venda → Escala → Financeira → Comercial → Outro)
+  return LOSS_GROUP_ORDER
+    .filter(g => map[g])
+    .map(g => ({
+      ...map[g],
+      absloss: Math.abs(map[g].loss),
+      share: totalLoss !== 0 ? (map[g].loss / totalLoss) * 100 : 0,
+    }));
+}
+
 export function calcKPIs(rows) {
   const revenue          = sum(rows, 'revenue');
   const profit           = sum(rows, 'profit');
@@ -24,34 +115,67 @@ export function calcKPIs(rows) {
   // Margin = SUM(total_resultadoab) / SUM(total_vendas) — never average per_mkpliquido
   const margin           = revenue !== 0 ? (profit / revenue) * 100 : 0;
   const ticketMedio      = uniquePassengers > 0 ? revenue / uniquePassengers : 0;
-  return { revenue, profit, profitLiquido, margin, uniquePassengers, uniqueSales, ticketMedio, count: rows.length };
+  // Breakdown de pax (dedup por venda — consistente com uniquePassengers)
+  const paxBreakdown     = uniquePaxBreakdownByVenda(rows);
+  return { revenue, profit, profitLiquido, margin, uniquePassengers, uniqueSales, ticketMedio, count: rows.length, paxBreakdown };
 }
 
 export function groupByClientOrVendor(rows, groupField) {
+  const PAX_FIELDS = ['paxAdt', 'paxChd', 'paxColo', 'paxRed', 'paxSen', 'paxFree', 'passengers'];
   const map = {};
   for (const r of rows) {
     const key = r[groupField] || '(sem nome)';
     if (!map[key]) map[key] = {
       name: key, revenue: 0, profitLiquido: 0, profit: 0,
-      commissionEmissor: 0, passengers: 0, _vendaMap: {},
+      commissionEmissor: 0, passengers: 0,
+      // Breakdown bruto (SUM por item — para visão fornecedor/serviço)
+      paxAdt: 0, paxChd: 0, paxColo: 0, paxRed: 0, paxSen: 0, paxFree: 0,
+      _vendaMap: {},
     };
     map[key].revenue           += r.revenue           || 0;
     map[key].profitLiquido     += r.profitLiquido     || 0;
     map[key].profit            += r.profit            || 0;
     map[key].commissionEmissor += r.commissionEmissor || 0;
     map[key].passengers        += r.passengers        || 0;
-    // Pax único por venda dentro do grupo
+    // Breakdown bruto por item
+    map[key].paxAdt  += r.paxAdt  || 0;
+    map[key].paxChd  += r.paxChd  || 0;
+    map[key].paxColo += r.paxColo || 0;
+    map[key].paxRed  += r.paxRed  || 0;
+    map[key].paxSen  += r.paxSen  || 0;
+    map[key].paxFree += r.paxFree || 0;
+    // Pax único por venda dentro do grupo (para dedup por venda)
     if (r.id) {
-      const cur = map[key]._vendaMap[r.id];
-      if (cur === undefined || r.passengers > cur) map[key]._vendaMap[r.id] = r.passengers;
+      if (!map[key]._vendaMap[r.id]) map[key]._vendaMap[r.id] = {};
+      for (const f of PAX_FIELDS) {
+        const cur = map[key]._vendaMap[r.id][f];
+        if (cur === undefined || (r[f] || 0) > cur) map[key]._vendaMap[r.id][f] = r[f] || 0;
+      }
     }
   }
   return Object.values(map)
-    .map(({ _vendaMap, ...g }) => ({
-      ...g,
-      uniquePassengers: Object.values(_vendaMap).reduce((s, v) => s + v, 0),
-      rentPct: g.revenue !== 0 ? (g.profit / g.revenue) * 100 : null,
-    }))
+    .map(({ _vendaMap, ...g }) => {
+      // Dedup: soma o max de cada campo por venda
+      const dedup = { adt: 0, chd: 0, colo: 0, red: 0, sen: 0, free: 0, total: 0 };
+      for (const v of Object.values(_vendaMap)) {
+        dedup.adt   += v.paxAdt   || 0;
+        dedup.chd   += v.paxChd   || 0;
+        dedup.colo  += v.paxColo  || 0;
+        dedup.red   += v.paxRed   || 0;
+        dedup.sen   += v.paxSen   || 0;
+        dedup.free  += v.paxFree  || 0;
+        dedup.total += v.passengers || 0;
+      }
+      return {
+        ...g,
+        // paxBreakdown (SUM bruto): usado em visão fornecedor/serviço
+        paxBreakdown: { adt: g.paxAdt, chd: g.paxChd, colo: g.paxColo, red: g.paxRed, sen: g.paxSen, free: g.paxFree, total: g.passengers },
+        // paxBreakdownUnique: dedup por venda (usado em KPIs/resumo do grupo)
+        paxBreakdownUnique: dedup,
+        uniquePassengers: dedup.total,
+        rentPct: g.revenue !== 0 ? (g.profit / g.revenue) * 100 : null,
+      };
+    })
     .sort((a, b) => b.revenue - a.revenue);
 }
 

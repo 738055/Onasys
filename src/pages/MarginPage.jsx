@@ -4,9 +4,9 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
   BarChart, Bar, Cell, LineChart, Line, Legend,
 } from 'recharts';
-import { scatterBySupplier, scatterByVendor } from '../utils/aggregations';
+import { scatterBySupplier, scatterByVendor, groupByLossReason, lossDiagnosticTotals } from '../utils/aggregations';
 import { supplierMarginTrend } from '../utils/supplierConcentration';
-import { BRLFULL, BRLk } from '../utils/format';
+import { BRLFULL, BRLk, resolveLossReason } from '../utils/format';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { ExportButton } from '../components/ExportButton';
 
@@ -48,22 +48,41 @@ function DistTooltip({ active, payload }) {
   );
 }
 
+function LossReasonTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-lg text-xs">
+      <p className="font-semibold text-slate-700 mb-1">{d.reason}</p>
+      <p className="text-slate-500">Grupo: <span className="font-medium">{d.group}</span></p>
+      <p className="text-slate-500">Prejuízo: <span className="font-medium text-red-600">{BRLFULL(-d.absloss)}</span></p>
+      <p className="text-slate-500">Itens: <span className="font-medium">{d.items.toLocaleString('pt-BR')}</span></p>
+      <p className="text-slate-500">% do Total: <span className="font-medium">{d.share.toFixed(1)}%</span></p>
+    </div>
+  );
+}
+
 export default function MarginPage({ rows }) {
-  const [page, setPage] = useState(0);
-  useEffect(() => { setPage(0); }, [rows]);
+  const [page, setPage]                   = useState(0);
+  const [selectedReason, setSelectedReason] = useState(null);
+  useEffect(() => { setPage(0); setSelectedReason(null); }, [rows]);
+
   const distRef        = useRef(null);
   const scatterRef     = useRef(null);
   const vendorScatRef  = useRef(null);
   const trendRef       = useRef(null);
+  const lossReasonRef  = useRef(null);
 
-  const scatter      = useMemo(() => scatterBySupplier(rows), [rows]);
-  const vendorScatter = useMemo(() => scatterByVendor(rows),   [rows]);
-  const trendData    = useMemo(() => supplierMarginTrend(rows, 10), [rows]);
-  const losses  = useMemo(() => rows.filter(r => r.profit < 0).sort((a, b) => a.profit - b.profit), [rows]);
+  const scatter        = useMemo(() => scatterBySupplier(rows),           [rows]);
+  const vendorScatter  = useMemo(() => scatterByVendor(rows),             [rows]);
+  const trendData      = useMemo(() => supplierMarginTrend(rows, 10),     [rows]);
+  const losses         = useMemo(() => rows.filter(r => r.profit < 0).sort((a, b) => a.profit - b.profit), [rows]);
+  const lossReasonData = useMemo(() => groupByLossReason(rows),           [rows]);
+  const diagnostics    = useMemo(() => lossDiagnosticTotals(rows),        [rows]);
 
-  const totalPrejuizo = useMemo(() => losses.reduce((s, r) => s + r.profit, 0), [losses]);
-  const piorResultado = useMemo(() => losses.length > 0 ? losses[0].profit : 0, [losses]);
-  const pctNeg        = rows.length > 0 ? (losses.length / rows.length * 100) : 0;
+  const totalPrejuizo  = useMemo(() => losses.reduce((s, r) => s + r.profit, 0), [losses]);
+  const piorResultado  = useMemo(() => losses.length > 0 ? losses[0].profit : 0, [losses]);
+  const pctNeg         = rows.length > 0 ? (losses.length / rows.length * 100) : 0;
 
   const distribution = useMemo(() => {
     const counts = DIST_BUCKETS.map(b => ({ ...b, count: 0, revenue: 0 }));
@@ -81,8 +100,22 @@ export default function MarginPage({ rows }) {
     return counts;
   }, [rows]);
 
-  const pageCount = Math.ceil(losses.length / PAGE_SIZE);
-  const pageRows  = losses.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  // Losses filtradas por origem (quando o usuário clica numa barra)
+  const filteredLosses = useMemo(() => {
+    if (!selectedReason) return losses;
+    return losses.filter(r => resolveLossReason(r.lossReason).label === selectedReason);
+  }, [losses, selectedReason]);
+
+  const pageCount = Math.ceil(filteredLosses.length / PAGE_SIZE);
+  const pageRows  = filteredLosses.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  function handleBarClick(data) {
+    if (!data) return;
+    const reason = data.activePayload?.[0]?.payload?.reason;
+    if (!reason) return;
+    setSelectedReason(prev => prev === reason ? null : reason);
+    setPage(0);
+  }
 
   return (
     <div className="space-y-6">
@@ -115,6 +148,128 @@ export default function MarginPage({ rows }) {
           <p className="mt-0.5 text-xs text-slate-500 opacity-60">no período</p>
         </div>
       </div>
+
+      {/* ─── NOVO: Diagnóstico de Origem do Prejuízo ─── */}
+      {losses.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+              Diagnóstico — Origem do Prejuízo
+              <InfoTooltip text="Classificação automática calculada pelo servidor para cada item com resultado negativo. Baseada em CASE WHEN que compara revenue vs custo_base_net vs custo_escala_operacional vs taxas vs comissões. Clique numa barra para filtrar a tabela de itens abaixo." />
+            </h2>
+            <ExportButton
+              title="Diagnóstico — Origem do Prejuízo"
+              slug="margens-origem-prejuizo"
+              chartRef={lossReasonRef}
+              sections={[{
+                title: 'Origem do Prejuízo',
+                chartRef: lossReasonRef,
+                columns: [
+                  { key: 'reason',  label: 'Classificação',  type: 'text'     },
+                  { key: 'group',   label: 'Grupo',          type: 'text'     },
+                  { key: 'items',   label: 'Nº Itens',       type: 'number'   },
+                  { key: 'absloss', label: 'Prejuízo (R$)',  type: 'currency', total: true },
+                  { key: 'share',   label: '% do Total',     type: 'percent'  },
+                ],
+                rows: lossReasonData,
+              }]}
+            />
+          </div>
+          <p className="text-xs text-slate-400 mb-4">
+            Por que os itens negativos foram negativos? &nbsp;·&nbsp;
+            <span className="text-red-500">Venda</span> = preço abaixo do NET &nbsp;·&nbsp;
+            <span className="text-orange-500">Escala</span> = custo operacional consumiu a margem &nbsp;·&nbsp;
+            <span className="text-amber-500">Financeira</span> = taxas &amp; provisão &nbsp;·&nbsp;
+            <span className="text-blue-500">Comercial</span> = repasses, comissões, descontos
+          </p>
+
+          {selectedReason && (
+            <div className="mb-3 flex items-center gap-2">
+              <span className="text-xs bg-blue-50 border border-blue-200 text-blue-700 rounded-full px-3 py-0.5">
+                Filtrando: <b>{selectedReason}</b>
+              </span>
+              <button
+                onClick={() => { setSelectedReason(null); setPage(0); }}
+                className="text-xs text-slate-400 hover:text-slate-600 underline"
+              >
+                × limpar filtro
+              </button>
+            </div>
+          )}
+
+          <div ref={lossReasonRef} className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            {/* BarChart horizontal — uma barra por classificação */}
+            <div className="lg:col-span-2">
+              <ResponsiveContainer width="100%" height={Math.max(180, lossReasonData.length * 42 + 20)}>
+                <BarChart
+                  data={lossReasonData}
+                  layout="vertical"
+                  margin={{ top: 4, right: 60, bottom: 4, left: 8 }}
+                  onClick={handleBarClick}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                  <XAxis
+                    type="number"
+                    tickFormatter={v => BRLk(v)}
+                    tick={{ fontSize: 10 }}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="short"
+                    tick={{ fontSize: 10 }}
+                    width={64}
+                    axisLine={false}
+                  />
+                  <Tooltip content={<LossReasonTooltip />} />
+                  <Bar dataKey="absloss" name="Prejuízo" radius={[0,4,4,0]} maxBarSize={28}>
+                    {lossReasonData.map((entry, i) => (
+                      <Cell
+                        key={i}
+                        fill={entry.color}
+                        opacity={selectedReason && selectedReason !== entry.reason ? 0.35 : 0.9}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Mini-KPIs por GRUPO */}
+            <div className="space-y-2">
+              <p className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold mb-2">Por grupo</p>
+              {diagnostics.map(g => (
+                <div key={g.group} className="flex items-center gap-2">
+                  <span
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ background: g.color }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline justify-between gap-1">
+                      <span className="text-xs font-medium text-slate-700 truncate">{g.group}</span>
+                      <span className="text-xs tabular-nums text-red-600 font-semibold whitespace-nowrap">{BRLFULL(-g.absloss)}</span>
+                    </div>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <div className="flex-1 bg-slate-100 rounded-full h-1">
+                        <div
+                          className="h-1 rounded-full"
+                          style={{ width: `${Math.abs(g.share)}%`, background: g.color }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-slate-400 tabular-nums w-8 text-right">{g.share.toFixed(1)}%</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400">{g.items.toLocaleString('pt-BR')} itens</p>
+                  </div>
+                </div>
+              ))}
+              {diagnostics.length === 0 && (
+                <p className="text-xs text-slate-400">Nenhum dado de diagnóstico disponível.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Distribution histogram */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
@@ -306,10 +461,23 @@ export default function MarginPage({ rows }) {
       {/* Loss table */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
         <div className="flex items-start justify-between gap-2 mb-3">
-          <h2 className="text-sm font-semibold text-slate-700">
-            Itens com Resultado Negativo
-            <span className="ml-2 text-red-500 font-normal text-xs">({losses.length.toLocaleString('pt-BR')} itens)</span>
-          </h2>
+          <div>
+            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              Itens com Resultado Negativo
+              <span className="text-red-500 font-normal text-xs">
+                ({filteredLosses.length.toLocaleString('pt-BR')} itens
+                {selectedReason ? ` de "${selectedReason}"` : ''})
+              </span>
+            </h2>
+            {selectedReason && (
+              <button
+                onClick={() => { setSelectedReason(null); setPage(0); }}
+                className="mt-1 text-xs text-blue-500 hover:text-blue-700 underline"
+              >
+                × ver todos os {losses.length.toLocaleString('pt-BR')} itens negativos
+              </button>
+            )}
+          </div>
           <ExportButton
             title="Itens com Resultado Negativo"
             slug="margens-prejuizos"
@@ -324,17 +492,26 @@ export default function MarginPage({ rows }) {
                 { key: 'revenue',      label: 'Faturamento',  type: 'currency', total: true },
                 { key: 'profit',       label: 'Resultado AB', type: 'currency', total: true },
                 { key: 'marginPctStr', label: '% Rent.',      type: 'text'     },
+                { key: 'lossReasonShort', label: 'Origem',    type: 'text'     },
               ],
-              rows: losses.map(r => ({
-                ...r,
-                emissionDate: r.emissionDate ? r.emissionDate.toLocaleDateString('pt-BR') : '-',
-                marginPctStr: r.revenue > 0 ? `${(r.profit / r.revenue * 100).toFixed(2)}%` : '-',
-              })),
+              rows: filteredLosses.map(r => {
+                const cfg = resolveLossReason(r.lossReason);
+                return {
+                  ...r,
+                  emissionDate: r.emissionDate ? r.emissionDate.toLocaleDateString('pt-BR') : '-',
+                  marginPctStr: r.revenue > 0 ? `${(r.profit / r.revenue * 100).toFixed(2)}%` : '-',
+                  lossReasonShort: cfg.label,
+                };
+              }),
             }]}
           />
         </div>
-        {losses.length === 0 ? (
-          <p className="text-xs text-slate-400 py-10 text-center">Nenhum item com resultado negativo no período.</p>
+        {filteredLosses.length === 0 ? (
+          <p className="text-xs text-slate-400 py-10 text-center">
+            {losses.length === 0
+              ? 'Nenhum item com resultado negativo no período.'
+              : `Nenhum item classificado como "${selectedReason}".`}
+          </p>
         ) : (
           <>
             <div className="overflow-x-auto">
@@ -348,12 +525,14 @@ export default function MarginPage({ rows }) {
                     <th className="pb-2 pr-3 font-semibold">Produto</th>
                     <th className="pb-2 pr-3 font-semibold text-right">Faturamento</th>
                     <th className="pb-2 pr-3 font-semibold text-right">Resultado AB</th>
-                    <th className="pb-2 font-semibold text-right">% Rent</th>
+                    <th className="pb-2 pr-3 font-semibold text-right">% Rent</th>
+                    <th className="pb-2 font-semibold">Origem</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pageRows.map((r, i) => {
                     const marginPct = r.revenue > 0 ? (r.profit / r.revenue * 100) : 0;
+                    const cfg       = resolveLossReason(r.lossReason);
                     return (
                       <tr key={`${r.id}-${i}`} className="border-b border-slate-100 bg-red-50">
                         <td className="py-2 pr-3 font-mono text-slate-600">{r.id}</td>
@@ -363,7 +542,20 @@ export default function MarginPage({ rows }) {
                         <td className="py-2 pr-3 max-w-[8rem] truncate">{r.product}</td>
                         <td className="py-2 pr-3 text-right">{BRLFULL(r.revenue)}</td>
                         <td className="py-2 pr-3 text-right font-semibold text-red-600">{BRLFULL(r.profit)}</td>
-                        <td className="py-2 text-right font-semibold text-red-600 tabular-nums">{marginPct.toFixed(2)}%</td>
+                        <td className="py-2 pr-3 text-right font-semibold text-red-600 tabular-nums">{marginPct.toFixed(2)}%</td>
+                        <td className="py-2">
+                          {r.lossReason ? (
+                            <span
+                              className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold text-white whitespace-nowrap"
+                              style={{ background: cfg.color }}
+                              title={cfg.label}
+                            >
+                              {cfg.short}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -372,7 +564,7 @@ export default function MarginPage({ rows }) {
             </div>
             {pageCount > 1 && (
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100">
-                <p className="text-xs text-slate-400">Página {page + 1} de {pageCount} ({losses.length.toLocaleString('pt-BR')} itens)</p>
+                <p className="text-xs text-slate-400">Página {page + 1} de {pageCount} ({filteredLosses.length.toLocaleString('pt-BR')} itens)</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setPage(p => Math.max(0, p - 1))}

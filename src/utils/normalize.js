@@ -1,4 +1,5 @@
-function parseNum(v) {
+// Exportado para reaproveitamento em outros utils
+export function parseNum(v) {
   if (v == null || v === '') return 0;
   return parseFloat(String(v).replace(',', '.')) || 0;
 }
@@ -33,7 +34,8 @@ export function normalizeRow(raw) {
     vendor:        String(raw.nomeemissor   || '').trim(),
     commercial:    String(raw.nomecomercial || '').trim(),
     saleType:      String(raw.tipovenda     || '').trim(),
-    seqId:         String(raw.idseqintens  || '').trim(),
+    // Fallback: API pode retornar "idseqitens" ou "idseqintens" (variação histórica)
+    seqId:         String(raw.idseqintens || raw.idseqitens || '').trim(),
     // Fallback: API pode retornar "Num_pax" (capital N) ou "num_pax" (snake_case original).
     passengers:    parseNum(raw.Num_pax ?? raw.num_pax),
     nights:        parseNum(raw.num_noites),
@@ -46,6 +48,30 @@ export function normalizeRow(raw) {
     profitLiquido: parseNum(raw.total_liquido),
     commissionEmissor:   parseNum(raw.total_com_emissor),
     marginPct:           parseNum(raw.per_mkpliquido),
+
+    // ─── Breakdown de passageiros por categoria ────────────────────────────
+    // Esses campos são por item (idseqitens). Para KPI executivo (dedup por venda)
+    // use uniquePaxBreakdownByVenda() em aggregations.js.
+    paxAdt:  parseNum(raw.nadt),          // Adultos
+    paxChd:  parseNum(raw.nchd),          // Crianças (meia)
+    paxColo: parseNum(raw.ncolo),         // Crianças free (colo)
+    paxRed:  parseNum(raw.red),           // Reduzidas (estudante, doador de sangue...)
+    paxSen:  parseNum(raw.nmidade),       // Melhor idade / Sênior
+    paxFree: parseNum(raw.free),          // Cortesia (agentes de viagem, cortesia...)
+
+    // ─── Diagnóstico de resultado ──────────────────────────────────────────
+    // lossReason: classificação calculada pelo servidor (API SQL) via CASE WHEN.
+    //   "Lucrativo" | "Falha na Venda (...)" | "Falha na Escala (...)"
+    //   | "Falha Financeira (...)" | "Falha Comercial (...)" | "Falha Indeterminada..."
+    lossReason:   String(raw.indicador_origem_prejuizo || '').trim(),
+    // idEscala: ID de escala operacional (0 = não escalado / venda avulsa)
+    idEscala:     parseNum(raw.idescala),
+    // costBaseNet: custo bruto do fornecedor (NET) — usado no diagnóstico
+    //   Falha na Venda = revenue < costBaseNet
+    costBaseNet:  parseNum(raw.custo_base_net),
+    // costScale: custo de escala operacional — guides, transporte, estrutura
+    //   Falha na Escala = (revenue - costBaseNet) < costScale
+    costScale:    parseNum(raw.custo_escala_operacional),
   };
 }
 

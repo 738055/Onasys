@@ -64,7 +64,7 @@ src/
 | `nomeemissor` | `vendor` | string | Emissor da venda |
 | `nomecomercial` | `commercial` | string | Responsável comercial (distinto do emissor) |
 | `tipovenda` | `saleType` | string | Tipo de venda |
-| `idseqintens` | `seqId` | string | Sequencial de itens (cross-sell: itens diferentes = seqIds diferentes) |
+| `idseqintens` / `idseqitens` | `seqId` | string | Sequencial de itens (cross-sell: itens diferentes = seqIds diferentes) — API usa ambos os nomes; normalize faz fallback |
 | `nacint` | `serviceScope` | — | 'I' ou texto com 'inter' → 'Internacional' |
 
 ### Quantidade
@@ -73,6 +73,28 @@ src/
 |-----------|-------------------|-------|
 | `Num_pax` / `num_pax` | `passengers` | **Fallback**: `Num_pax ?? num_pax` — API pode capitalizar o N |
 | `num_noites` | `nights` | Noites de hospedagem |
+| `nadt` | `paxAdt` | Adultos (por item/serviço) |
+| `nchd` | `paxChd` | Crianças meia-entrada (por item) |
+| `ncolo` | `paxColo` | Crianças free / colo (por item) |
+| `red` | `paxRed` | Reduzidas: estudante, doador de sangue e afins |
+| `nmidade` | `paxSen` | Melhor idade / Sênior |
+| `free` | `paxFree` | Cortesia: agentes de viagem, cortesia institucional |
+
+> **Dedup de breakdown:** Para KPIs executivos, use `uniquePaxBreakdownByVenda(rows)` em `aggregations.js` (max por venda — consistente com `passengers`).  
+> Para visão fornecedor/serviço/operação, use `sumPaxBreakdown(rows)` (SUM bruto por item).  
+> `groupByClientOrVendor` retorna ambos: `paxBreakdown` (bruto) e `paxBreakdownUnique` (dedup).
+
+### Diagnóstico de Resultado / Escala
+
+| Campo API | Campo normalizado | Tipo | Notas |
+|-----------|-------------------|------|-------|
+| `indicador_origem_prejuizo` | `lossReason` | string | Classificação calculada pelo servidor: "Lucrativo", "Falha na Venda (...)", "Falha na Escala (...)", "Falha Financeira (...)", "Falha Comercial (...)", "Falha Indeterminada..." |
+| `idescala` | `idEscala` | number | ID de escala operacional — 0 = não escalado / venda avulsa |
+| `custo_base_net` | `costBaseNet` | number | Custo bruto NET do fornecedor — Falha na Venda = `revenue < costBaseNet` |
+| `custo_escala_operacional` | `costScale` | number | Custo de escala (guias, transporte, estrutura) — Falha na Escala = `(revenue - costBaseNet) < costScale` |
+
+> **Uso:** `resolveLossReason(lossReason)` em `src/utils/format.js` faz match tolerante e retorna `{ group, label, short, color }`.  
+> `groupByLossReason(rows)` e `lossDiagnosticTotals(rows)` em `aggregations.js` agregam para o painel "Diagnóstico" da MarginPage.
 
 ### Financeiro — Receita
 
@@ -144,6 +166,8 @@ Estes campos existem na API mas não são normalizados em campos separados — j
 | 5 | `NacInt` | Capitalização mista (N e I maiúsculos) |
 | 6 | `total_comissao` | = repasse a OTAs/sub-agentes = **CUSTO**, não receita |
 | 7 | `per_mkpliquido` | Gerado sobre `total_resultadoab` bruto — **NUNCA usar para % Rent agregado** |
+| 8 | `nadt`+`nchd`+`ncolo`+`red`+`nmidade`+`free` | Soma das categorias pode ≠ `num_pax` (data quality API) — `PaxAuditModal` exibe badge `⚠` quando há discrepância |
+| 9 | `idseqitens` / `idseqintens` | API usa ambas as grafias para o mesmo campo — `normalize.js` faz fallback `raw.idseqintens \|\| raw.idseqitens` |
 
 ---
 

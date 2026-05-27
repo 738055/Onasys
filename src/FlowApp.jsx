@@ -6,7 +6,8 @@ import {
 import { Download, Search } from 'lucide-react';
 import { useDashboardData } from './hooks/useDashboardData';
 import { InfoTooltip } from './components/InfoTooltip';
-import { SEGMENT_CFG } from './utils/format';
+import { SEGMENT_CFG, PAX_CATEGORY_CFG } from './utils/format';
+import { PaxCompositionBar } from './components/PaxCompositionBar';
 
 const MONTH_PT = [
   'Janeiro','Fevereiro','Março','Abril','Maio','Junho',
@@ -34,14 +35,33 @@ function paxColor(pax, maxPax, isAlert) {
 function FlowTooltip({ active, payload, monthName }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
+  const breakdown = { adt: d.paxAdt, chd: d.paxChd, colo: d.paxColo, red: d.paxRed, sen: d.paxSen, free: d.paxFree };
+  const hasBreakdown = PAX_CATEGORY_CFG.some(c => (breakdown[c.key] || 0) > 0);
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-2.5 shadow text-xs">
+    <div className="bg-white border border-slate-200 rounded-lg p-2.5 shadow text-xs min-w-[140px]">
       <p className="font-bold text-slate-700 mb-1">
         {d.day} de {monthName}
         {d.isAlert && <span className="ml-1.5 text-orange-500">⚠ alerta</span>}
       </p>
       <p className="text-blue-600 font-semibold">{d.pax.toLocaleString('pt-BR')} pax</p>
-      {d.services > 0 && <p className="text-slate-400">{d.services} serviços</p>}
+      {d.services > 0 && <p className="text-slate-400 mb-1">{d.services} serviços</p>}
+      {hasBreakdown && (
+        <div className="mt-1.5 space-y-0.5 border-t border-slate-100 pt-1.5">
+          {PAX_CATEGORY_CFG.map(c => {
+            const v = breakdown[c.key] || 0;
+            if (v === 0) return null;
+            return (
+              <div key={c.key} className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: c.color }} />
+                  <span className="text-slate-500">{c.labelLong}</span>
+                </span>
+                <span className="font-semibold text-slate-700 tabular-nums">{v.toLocaleString('pt-BR')}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -182,9 +202,20 @@ export default function FlowApp() {
     for (const r of filteredRows) {
       if (!r.checkinDate) continue;
       const d = r.checkinDate.getDate();
-      if (!map[d]) map[d] = { pax: 0, services: new Set() };
+      if (!map[d]) map[d] = {
+        pax: 0, services: new Set(),
+        // Breakdown por categoria
+        paxAdt: 0, paxChd: 0, paxColo: 0, paxRed: 0, paxSen: 0, paxFree: 0,
+      };
       map[d].pax += r.passengers;
       if (r.product) map[d].services.add(r.product);
+      // Acumula breakdown
+      map[d].paxAdt  += r.paxAdt  || 0;
+      map[d].paxChd  += r.paxChd  || 0;
+      map[d].paxColo += r.paxColo || 0;
+      map[d].paxRed  += r.paxRed  || 0;
+      map[d].paxSen  += r.paxSen  || 0;
+      map[d].paxFree += r.paxFree || 0;
     }
     return map;
   }, [filteredRows]);
@@ -228,7 +259,19 @@ export default function FlowApp() {
   const chartData = useMemo(() =>
     Array.from({ length: daysInMonth }, (_, i) => {
       const day = i + 1, info = dailyPax[day];
-      return { day, pax: info?.pax ?? 0, services: info?.services?.size ?? 0, isAlert: alertDays.has(day) };
+      return {
+        day,
+        pax:      info?.pax      ?? 0,
+        services: info?.services?.size ?? 0,
+        isAlert:  alertDays.has(day),
+        // Breakdown por categoria (para o tooltip)
+        paxAdt:  info?.paxAdt  ?? 0,
+        paxChd:  info?.paxChd  ?? 0,
+        paxColo: info?.paxColo ?? 0,
+        paxRed:  info?.paxRed  ?? 0,
+        paxSen:  info?.paxSen  ?? 0,
+        paxFree: info?.paxFree ?? 0,
+      };
     }),
   [daysInMonth, dailyPax, alertDays]);
 
@@ -684,29 +727,41 @@ export default function FlowApp() {
                       <SortTh col="product"     label="Serviço" current={sortCol} dir={sortDir} onSort={handleSort} />
                       <SortTh col="saleType"    label="Tipo"    current={sortCol} dir={sortDir} onSort={handleSort} />
                       <SortTh col="passengers"  label="Pax"     current={sortCol} dir={sortDir} onSort={handleSort} align="right" />
+                      <th className="pb-2 font-semibold text-center text-slate-500">Composição</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {pageRows.map((r, i) => (
-                      <tr key={`${r.id}-${i}`} className="border-b border-slate-100 hover:bg-slate-50">
-                        <td className="py-1.5 pr-3 text-slate-300 tabular-nums">{detailPage * PAGE_SIZE + i + 1}</td>
-                        <td className="py-1.5 pr-3 font-mono text-slate-500">{r.seqId || '—'}</td>
-                        <td className="py-1.5 pr-3 font-mono text-slate-500">{r.id || '—'}</td>
-                        <td className="py-1.5 pr-3 text-slate-500">{r.checkinDate ? r.checkinDate.toLocaleDateString('pt-BR') : '—'}</td>
-                        <td className="py-1.5 pr-3 max-w-[16rem] truncate font-medium text-slate-700" title={r.product}>{r.product || '—'}</td>
-                        <td className="py-1.5 pr-3 text-slate-500">{r.saleType || '—'}</td>
-                        <td className="py-1.5 text-right font-bold text-slate-800 tabular-nums">{r.passengers.toLocaleString('pt-BR')}</td>
-                      </tr>
-                    ))}
+                    {pageRows.map((r, i) => {
+                      const bd = { adt: r.paxAdt, chd: r.paxChd, colo: r.paxColo, red: r.paxRed, sen: r.paxSen, free: r.paxFree };
+                      const hasBd = PAX_CATEGORY_CFG.some(c => (bd[c.key] || 0) > 0);
+                      return (
+                        <tr key={`${r.id}-${i}`} className="border-b border-slate-100 hover:bg-slate-50">
+                          <td className="py-1.5 pr-3 text-slate-300 tabular-nums">{detailPage * PAGE_SIZE + i + 1}</td>
+                          <td className="py-1.5 pr-3 font-mono text-slate-500">{r.seqId || '—'}</td>
+                          <td className="py-1.5 pr-3 font-mono text-slate-500">{r.id || '—'}</td>
+                          <td className="py-1.5 pr-3 text-slate-500">{r.checkinDate ? r.checkinDate.toLocaleDateString('pt-BR') : '—'}</td>
+                          <td className="py-1.5 pr-3 max-w-[16rem] truncate font-medium text-slate-700" title={r.product}>{r.product || '—'}</td>
+                          <td className="py-1.5 pr-3 text-slate-500">{r.saleType || '—'}</td>
+                          <td className="py-1.5 pr-3 text-right font-bold text-slate-800 tabular-nums">{r.passengers.toLocaleString('pt-BR')}</td>
+                          <td className="py-1.5 pl-1">
+                            {hasBd
+                              ? <PaxCompositionBar breakdown={bd} height={5} className="w-16" />
+                              : <span className="text-slate-200 text-[10px]">—</span>
+                            }
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 border-slate-300 font-semibold bg-slate-50">
                       <td colSpan={6} className="pt-2 pr-3 text-xs text-slate-500">
                         TOTAL {detailSearch ? `(${detailRowsSearched.length} filtrado${detailRowsSearched.length !== 1 ? 's' : ''})` : ''}
                       </td>
-                      <td className="pt-2 text-right text-xs text-slate-800 tabular-nums">
+                      <td className="pt-2 pr-3 text-right text-xs text-slate-800 tabular-nums">
                         {detailRowsSearched.reduce((s, r) => s + r.passengers, 0).toLocaleString('pt-BR')}
                       </td>
+                      <td />
                     </tr>
                   </tfoot>
                 </table>

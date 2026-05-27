@@ -1,8 +1,12 @@
 import { useMemo, useState } from 'react';
-import { X, ChevronDown, ChevronRight, Search } from 'lucide-react';
-import { BRLFULL } from '../utils/format';
+import { X, ChevronDown, ChevronRight, Search, AlertTriangle } from 'lucide-react';
+import { BRLFULL, PAX_CATEGORY_CFG } from '../utils/format';
+import { PaxCompositionBar, PaxBreakdownChips } from './PaxCompositionBar';
 
 const PAGE_SIZE = 30;
+
+// Campos de breakdown rastreados por venda (max entre itens)
+const PAX_MAX_FIELDS = ['paxAdt', 'paxChd', 'paxColo', 'paxRed', 'paxSen', 'paxFree'];
 
 function buildAudit(rows) {
   const map = {};
@@ -17,6 +21,9 @@ function buildAudit(rows) {
         channel:      r.channel      || '',
         emissionDate: r.emissionDate,
         maxPax:       0,
+        // Breakdown por venda (max de cada categoria entre os itens)
+        maxPaxAdt:  0, maxPaxChd:  0, maxPaxColo: 0,
+        maxPaxRed:  0, maxPaxSen:  0, maxPaxFree:  0,
         revenue:      0,
         profitLiquido:0,
         items:        [],
@@ -24,14 +31,25 @@ function buildAudit(rows) {
     }
     const entry = map[r.id];
     if ((r.passengers || 0) > entry.maxPax) entry.maxPax = r.passengers || 0;
+    // Max por categoria — mesmo critério do num_pax (max entre itens da venda)
+    for (const f of PAX_MAX_FIELDS) {
+      const key = 'max' + f.charAt(0).toUpperCase() + f.slice(1); // ex: 'maxPaxAdt'
+      if ((r[f] || 0) > entry[key]) entry[key] = r[f] || 0;
+    }
     entry.revenue       += r.revenue       || 0;
     entry.profitLiquido += r.profitLiquido || 0;
     entry.items.push({
-      product:    r.product   || '(sem produto)',
-      segment:    r.segment   || '',
-      supplier:   r.supplier  || '',
+      product:    r.product    || '(sem produto)',
+      segment:    r.segment    || '',
+      supplier:   r.supplier   || '',
       passengers: r.passengers || 0,
-      revenue:    r.revenue   || 0,
+      paxAdt:     r.paxAdt     || 0,
+      paxChd:     r.paxChd     || 0,
+      paxColo:    r.paxColo    || 0,
+      paxRed:     r.paxRed     || 0,
+      paxSen:     r.paxSen     || 0,
+      paxFree:    r.paxFree    || 0,
+      revenue:    r.revenue    || 0,
     });
   }
   return Object.values(map).sort((a, b) => b.maxPax - a.maxPax || b.revenue - a.revenue);
@@ -97,6 +115,9 @@ export function PaxAuditModal({ rows, onClose }) {
               <span className="text-amber-500">⚠</span> = itens com pax divergente (MAX foi aplicado) &nbsp;·&nbsp;
               <span className="text-slate-400 text-[10px]">×N</span> = N itens com mesmo pax (grupo único)
             </p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Composição por categoria (ADT/CHD/COL/RED/SEN/FREE) exibida ao expandir cada venda.
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -152,6 +173,11 @@ export function PaxAuditModal({ rows, onClose }) {
                 const allSame      = !hasMultiPax && v.items.length > 1;
                 // firstMaxIdx: índice do 1º item que atinge o max (o "representante" do grupo)
                 const firstMaxIdx  = v.items.findIndex(it => it.passengers === v.maxPax);
+                // Verificação de qualidade do breakdown: ADT+CHD+COL+RED+SEN+FREE deve = maxPax
+                const breakdownSum = v.maxPaxAdt + v.maxPaxChd + v.maxPaxColo + v.maxPaxRed + v.maxPaxSen + v.maxPaxFree;
+                const hasBreakdownMismatch = breakdownSum > 0 && breakdownSum !== v.maxPax;
+                // Shape para PaxCompositionBar
+                const paxBreakdown = { adt: v.maxPaxAdt, chd: v.maxPaxChd, colo: v.maxPaxColo, red: v.maxPaxRed, sen: v.maxPaxSen, free: v.maxPaxFree };
                 return (
                   <>
                     <tr
@@ -171,20 +197,42 @@ export function PaxAuditModal({ rows, onClose }) {
                       <td className="py-2 pr-3 text-slate-400">{v.filial}</td>
                       <td className="py-2 pr-3 text-slate-500 tabular-nums">{fmtDate(v.emissionDate)}</td>
                       <td className="py-2 pr-3 text-center text-slate-500">{v.items.length}</td>
-                      <td className="py-2 pr-3 text-right font-semibold text-slate-700 tabular-nums">
-                        {v.maxPax.toLocaleString('pt-BR')}
-                        {hasMultiPax && (
-                          <span
-                            className="ml-1 text-amber-500 text-[10px]"
-                            title="Itens com pax divergente — contando o maior"
-                          >⚠</span>
-                        )}
-                        {allSame && (
-                          <span
-                            className="ml-1 text-slate-400 text-[10px]"
-                            title="Todos os itens com mesmo pax — grupo único, contando 1×"
-                          >×{v.items.length}</span>
-                        )}
+                      <td className="py-2 pr-3 text-right tabular-nums">
+                        <div className="flex flex-col items-end gap-1">
+                          <div className="flex items-center gap-1">
+                            <span className="font-semibold text-slate-700">
+                              {v.maxPax.toLocaleString('pt-BR')}
+                            </span>
+                            {hasMultiPax && (
+                              <span
+                                className="text-amber-500 text-[10px]"
+                                title="Itens com pax divergente — contando o maior"
+                              >⚠</span>
+                            )}
+                            {allSame && (
+                              <span
+                                className="text-slate-400 text-[10px]"
+                                title="Todos os itens com mesmo pax — grupo único, contando 1×"
+                              >×{v.items.length}</span>
+                            )}
+                            {hasBreakdownMismatch && (
+                              <span
+                                title={`Soma do breakdown (${breakdownSum}) ≠ pax contado (${v.maxPax}) — possível inconsistência na API`}
+                                className="text-orange-400"
+                              >
+                                <AlertTriangle size={10} />
+                              </span>
+                            )}
+                          </div>
+                          {/* Mini-bar de composição */}
+                          {breakdownSum > 0 && (
+                            <PaxCompositionBar
+                              breakdown={paxBreakdown}
+                              height={4}
+                              className="w-16"
+                            />
+                          )}
+                        </div>
                       </td>
                       <td className="py-2 text-right text-slate-700 tabular-nums">{BRLFULL(v.revenue)}</td>
                     </tr>
@@ -193,13 +241,26 @@ export function PaxAuditModal({ rows, onClose }) {
                       <>
                         {/* Legenda rápida dentro da venda expandida */}
                         <tr className="bg-slate-50 border-b border-slate-100">
-                          <td colSpan={9} className="py-1 px-4 text-[10px] text-slate-400 italic">
-                            {hasMultiPax
-                              ? `Itens com pax diferentes → contando apenas o maior (${v.maxPax} pax)`
-                              : allSame
-                                ? `Todos os ${v.items.length} itens têm ${v.maxPax} pax → mesmo grupo, contando 1× = ${v.maxPax} pax`
-                                : `1 item → ${v.maxPax} pax`
-                            }
+                          <td colSpan={9} className="py-1.5 px-4 text-[10px] text-slate-400 italic">
+                            <div className="flex items-center gap-4 flex-wrap">
+                              <span>
+                                {hasMultiPax
+                                  ? `Itens com pax diferentes → contando apenas o maior (${v.maxPax} pax)`
+                                  : allSame
+                                    ? `Todos os ${v.items.length} itens têm ${v.maxPax} pax → mesmo grupo, contando 1× = ${v.maxPax} pax`
+                                    : `1 item → ${v.maxPax} pax`
+                                }
+                              </span>
+                              {breakdownSum > 0 && (
+                                <PaxBreakdownChips breakdown={paxBreakdown} />
+                              )}
+                              {hasBreakdownMismatch && (
+                                <span className="text-orange-500 flex items-center gap-0.5">
+                                  <AlertTriangle size={10} />
+                                  Soma breakdown ({breakdownSum}) ≠ num_pax ({v.maxPax})
+                                </span>
+                              )}
+                            </div>
                           </td>
                         </tr>
 
@@ -208,24 +269,29 @@ export function PaxAuditModal({ rows, onClose }) {
                           const isFirstMax = j === firstMaxIdx;
 
                           // Regra única para todos os casos:
-                          // 1º item que atinge o MAX → verde + "✓ contado"  (só este entra na soma)
-                          // demais itens com mesmo pax → cinza + "= mesmo grupo" (não somam)
+                          // 1º item que atinge o MAX → verde + "✓ contado"
+                          // demais itens com mesmo pax → cinza + "= mesmo grupo"
                           // itens com pax menor       → cinza + "não contado"
                           let paxColor, paxSuffix;
                           if (isFirstMax) {
                             paxColor  = 'font-semibold text-emerald-700';
                             paxSuffix = v.items.length > 1
                               ? <span className="ml-1 text-[10px] text-emerald-600 font-semibold">✓ contado</span>
-                              : null; // venda com 1 item: sem badge desnecessário
+                              : null;
                           } else if (isMax) {
-                            // Mesmo valor que o max, mas não é o primeiro — mesmo grupo
                             paxColor  = 'text-slate-400';
                             paxSuffix = <span className="ml-1 text-[10px] text-slate-400">= mesmo grupo</span>;
                           } else {
-                            // Pax menor que o max
                             paxColor  = 'text-slate-400';
                             paxSuffix = <span className="ml-1 text-[10px] text-slate-300">não contado</span>;
                           }
+
+                          // Breakdown por item (campos individuais)
+                          const itemBreakdown = {
+                            adt: it.paxAdt, chd: it.paxChd, colo: it.paxColo,
+                            red: it.paxRed, sen: it.paxSen, free: it.paxFree,
+                          };
+                          const itemBreakdownSum = it.paxAdt + it.paxChd + it.paxColo + it.paxRed + it.paxSen + it.paxFree;
 
                           return (
                             <tr
@@ -238,8 +304,13 @@ export function PaxAuditModal({ rows, onClose }) {
                               </td>
                               <td className="py-1.5 pr-3 text-slate-400 truncate">{it.supplier}</td>
                               <td className="py-1.5 pr-3 text-slate-400">{it.segment}</td>
-                              <td />
-                              <td />
+                              {/* Breakdown por item em chips — substitui 2 TDs vazios */}
+                              <td colSpan={2} className="py-1.5 pr-3">
+                                {itemBreakdownSum > 0
+                                  ? <PaxBreakdownChips breakdown={itemBreakdown} />
+                                  : <span className="text-slate-200">—</span>
+                                }
+                              </td>
                               <td className="py-1.5 pr-3 text-right tabular-nums">
                                 <span className={paxColor}>
                                   {it.passengers.toLocaleString('pt-BR')}
