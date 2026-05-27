@@ -279,6 +279,87 @@ export function scatterByVendor(rows) {
     }));
 }
 
+// Análise da causa-raiz das "Falhas na Escala":
+// distingue se o preço não cobriu nem o custo NET do fornecedor (problema de VENDA)
+// vs cobriu o NET mas não o custo operacional (problema real de ESCALA).
+//
+// Retorna null se não houver itens Escala com dados de custo disponíveis.
+export function escalaDeepDive(rows) {
+  const escalaItems = rows.filter(
+    r => r.profit < 0 && resolveLossReason(r.lossReason).group === 'Escala',
+  );
+  if (escalaItems.length === 0) return null;
+
+  // Sub-causa 1 — "Problema de Venda": preço abaixo do custo NET do fornecedor
+  //   revenue < costBaseNet → mesmo sem contar escala, já há prejuízo no custo bruto
+  const belowNetItems    = escalaItems.filter(r => r.revenue < (r.costBaseNet || 0));
+  // Sub-causa 2 — "Problema de Escala": preço cobriu NET mas não o custo operacional
+  //   revenue ≥ costBaseNet, mas revenue − NET < costScale
+  const aboveNetItems    = escalaItems.filter(r => r.revenue >= (r.costBaseNet || 0));
+  // Sub-causa 3 — "Outros custos" (edge case): cobriu NET+Escala mas taxas/comissões levaram ao prejuízo
+  const coversNetScale   = aboveNetItems.filter(r => (r.revenue - (r.costBaseNet||0)) >= (r.costScale||0));
+
+  // Cobertura média da escala para itens que cobriram o NET (0 a 1 = parcial, 1+ = cobre tudo)
+  const withScale = aboveNetItems.filter(r => (r.costScale||0) > 0);
+  const avgCoverage = withScale.length > 0
+    ? withScale.reduce((s, r) => s + (r.revenue - (r.costBaseNet||0)) / r.costScale, 0) / withScale.length
+    : null;
+
+  // Diagnóstico das escalas como unidade (não só os itens individuais)
+  const scaleIds = [...new Set(escalaItems.map(r => r.idEscala).filter(id => id > 0))];
+  // Agrega o resultado total de CADA escala (todos os itens, incluindo lucrativos)
+  const scaleTotals = {};
+  for (const r of rows) {
+    if (!r.idEscala || !scaleIds.includes(r.idEscala)) continue;
+    scaleTotals[r.idEscala] = (scaleTotals[r.idEscala] || 0) + (r.profit || 0);
+  }
+  const deficitScaleCount = scaleIds.filter(id => scaleTotals[id] < 0).length;
+  const mixedScaleCount   = scaleIds.filter(id => scaleTotals[id] >= 0).length; // escala lucrativa, mas tem item negativo (alocação)
+
+  return {
+    total:             escalaItems.length,
+    belowNet:          belowNetItems.length,     // preço < NET → venda foi o problema
+    aboveNet:          aboveNetItems.length,      // preço ≥ NET → escala foi o problema
+    coversNetScale:    coversNetScale.length,     // edge: cobriu NET+Esc mas outros custos → Financeiro/Comercial
+    avgCoverage,                                  // cobertura média da escala (aboveNet items)
+    scaleCount:        scaleIds.length,
+    deficitScaleCount,                            // escalas deficitárias NO TOTAL
+    mixedScaleCount,                              // escalas lucrativas no total mas c/ itens negativos (alocação)
+    totalLoss:         escalaItems.reduce((s, r) => s + (r.profit||0), 0),
+    belowNetLoss:      belowNetItems.reduce((s, r) => s + (r.profit||0), 0),
+    aboveNetLoss:      aboveNetItems.reduce((s, r) => s + (r.profit||0), 0),
+  };
+}
+
+// Agrupa todos os itens por idEscala (exclui escala 0 = sem escala operacional).
+// Retorna um mapa { [idEscala]: { idEscala, product, supplier, checkinDate, items[], revenue, costBaseNet, costScale, profit } }.
+// Usado pelo ScaleAuditModal para exibir TODOS os itens de uma escala (incluindo lucrativos)
+// e calcular a viabilidade da escala como unidade de análise.
+export function groupByEscala(rows) {
+  const map = {};
+  for (const r of rows) {
+    if (!r.idEscala || r.idEscala === 0) continue;
+    const key = r.idEscala;
+    if (!map[key]) map[key] = {
+      idEscala:    key,
+      product:     r.product     || '(sem produto)',
+      supplier:    r.supplier    || '(sem fornecedor)',
+      checkinDate: r.checkinDate,
+      items:       [],
+      revenue:     0,
+      costBaseNet: 0,
+      costScale:   0,
+      profit:      0,
+    };
+    map[key].items.push(r);
+    map[key].revenue     += r.revenue     || 0;
+    map[key].costBaseNet += r.costBaseNet || 0;
+    map[key].costScale   += r.costScale   || 0;
+    map[key].profit      += r.profit      || 0;
+  }
+  return map;
+}
+
 // Receita e margem por passageiro por segmento.
 // Usa passengers bruto por item (não deduplica por venda) — cada item de serviço
 // representa uma entrega independente para aquele grupo de pax.

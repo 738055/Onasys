@@ -4,11 +4,12 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
   BarChart, Bar, Cell, LineChart, Line, Legend,
 } from 'recharts';
-import { scatterBySupplier, scatterByVendor, groupByLossReason, lossDiagnosticTotals } from '../utils/aggregations';
+import { scatterBySupplier, scatterByVendor, groupByLossReason, lossDiagnosticTotals, escalaDeepDive } from '../utils/aggregations';
 import { supplierMarginTrend } from '../utils/supplierConcentration';
 import { BRLFULL, BRLk, resolveLossReason } from '../utils/format';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { ExportButton } from '../components/ExportButton';
+import { ScaleAuditModal } from '../components/ScaleAuditModal';
 
 const PAGE_SIZE = 20;
 
@@ -63,8 +64,9 @@ function LossReasonTooltip({ active, payload }) {
 }
 
 export default function MarginPage({ rows }) {
-  const [page, setPage]                   = useState(0);
-  const [selectedReason, setSelectedReason] = useState(null);
+  const [page, setPage]                     = useState(0);
+  const [selectedReason, setSelectedReason]   = useState(null);
+  const [scaleAuditEscala, setScaleAuditEscala] = useState(null);  // idEscala a auditar (null = fechado)
   useEffect(() => { setPage(0); setSelectedReason(null); }, [rows]);
 
   const distRef        = useRef(null);
@@ -79,6 +81,7 @@ export default function MarginPage({ rows }) {
   const losses         = useMemo(() => rows.filter(r => r.profit < 0).sort((a, b) => a.profit - b.profit), [rows]);
   const lossReasonData = useMemo(() => groupByLossReason(rows),           [rows]);
   const diagnostics    = useMemo(() => lossDiagnosticTotals(rows),        [rows]);
+  const escalaDive     = useMemo(() => escalaDeepDive(rows),              [rows]);
 
   const totalPrejuizo  = useMemo(() => losses.reduce((s, r) => s + r.profit, 0), [losses]);
   const piorResultado  = useMemo(() => losses.length > 0 ? losses[0].profit : 0, [losses]);
@@ -118,6 +121,7 @@ export default function MarginPage({ rows }) {
   }
 
   return (
+    <>
     <div className="space-y-6">
       {/* KPI summary strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -268,6 +272,100 @@ export default function MarginPage({ rows }) {
               )}
             </div>
           </div>
+
+          {/* ── Sub-card: Causa Raiz das Falhas de Escala ── */}
+          {escalaDive && (
+            <div className="mt-5 border-t border-slate-100 pt-5">
+              <h3 className="text-xs font-semibold text-slate-600 flex items-center gap-1 mb-3">
+                🔎 Causa Raiz — Falhas de Escala
+                <InfoTooltip text={
+                  'Decompõe os itens classificados como "Falha na Escala" em duas sub-causas:\n' +
+                  '① Preço abaixo do NET → a venda foi mal feita (o emissor vendeu abaixo do custo do fornecedor, independente da escala)\n' +
+                  '② Preço cobriu o NET mas não a escala → o custo operacional (guia/transporte) consumiu a margem\n\n' +
+                  'Também mostra quantas escalas são deficitárias como UNIDADE vs escalas que têm itens negativos mas são lucrativas no total (problema de alocação interna).'
+                } />
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+
+                {/* Sub-causa 1: Preço < NET */}
+                <div className={`rounded-lg p-3 border ${escalaDive.belowNet > 0 ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'}`}>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-red-600 mb-1">
+                    ① Preço abaixo do NET
+                  </p>
+                  <p className="text-lg font-bold tabular-nums text-red-700">{escalaDive.belowNet.toLocaleString('pt-BR')}</p>
+                  <p className="text-[10px] text-red-500 leading-tight mt-0.5">
+                    {escalaDive.total > 0 ? `${(escalaDive.belowNet / escalaDive.total * 100).toFixed(0)}% dos itens Escala` : ''}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                    O emissor vendeu <strong>abaixo do custo do fornecedor</strong> — problema de venda, não de escala
+                  </p>
+                  {escalaDive.belowNet > 0 && (
+                    <p className="text-[10px] text-red-600 font-semibold mt-1 tabular-nums">
+                      {BRLFULL(escalaDive.belowNetLoss)}
+                    </p>
+                  )}
+                </div>
+
+                {/* Sub-causa 2: Preço cobriu NET, não cobriu escala */}
+                <div className={`rounded-lg p-3 border ${escalaDive.aboveNet > 0 ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-200'}`}>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600 mb-1">
+                    ② Custo Operacional Alto
+                  </p>
+                  <p className="text-lg font-bold tabular-nums text-orange-700">{escalaDive.aboveNet.toLocaleString('pt-BR')}</p>
+                  <p className="text-[10px] text-orange-500 leading-tight mt-0.5">
+                    {escalaDive.total > 0 ? `${(escalaDive.aboveNet / escalaDive.total * 100).toFixed(0)}% dos itens Escala` : ''}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                    Preço cobriu o fornecedor, mas o <strong>custo da escala operacional</strong> consumiu a margem
+                  </p>
+                  {escalaDive.avgCoverage !== null && (
+                    <p className="text-[10px] text-orange-600 mt-1">
+                      Cobertura média da escala: <strong>{(escalaDive.avgCoverage * 100).toFixed(0)}%</strong>
+                    </p>
+                  )}
+                </div>
+
+                {/* Escalas deficitárias no total */}
+                <div className="rounded-lg p-3 border bg-amber-50 border-amber-200">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 mb-1">
+                    Escalas Deficitárias
+                  </p>
+                  <p className="text-lg font-bold tabular-nums text-amber-700">
+                    {escalaDive.deficitScaleCount}
+                    <span className="text-sm font-normal text-amber-500"> / {escalaDive.scaleCount}</span>
+                  </p>
+                  <p className="text-[10px] text-amber-500 leading-tight mt-0.5">escalas no total</p>
+                  <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                    A <strong>escala como unidade</strong> (todos os itens somados) resultou em prejuízo
+                  </p>
+                </div>
+
+                {/* Escalas mistas */}
+                <div className="rounded-lg p-3 border bg-blue-50 border-blue-200">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-600 mb-1">
+                    Escalas Mistas
+                  </p>
+                  <p className="text-lg font-bold tabular-nums text-blue-700">{escalaDive.mixedScaleCount}</p>
+                  <p className="text-[10px] text-blue-500 leading-tight mt-0.5">
+                    {escalaDive.scaleCount > 0 ? `de ${escalaDive.scaleCount} escalas` : ''}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                    Escala <strong>lucrativa no total</strong>, mas tem itens negativos — problema de alocação interna do custo
+                  </p>
+                </div>
+
+              </div>
+
+              {/* Legenda interpretativa */}
+              <div className="mt-3 p-2.5 bg-slate-50 rounded-lg text-[10px] text-slate-500 leading-relaxed">
+                <span className="font-semibold text-slate-600">Como interpretar: </span>
+                Se ① predomina → revisar treinamento de precificação dos emissores / política de mínimo de venda.
+                Se ② predomina → revisar o custo das operações ou aumentar o preço mínimo por escala.
+                Se "Escalas Mistas" predomina → a escala em si é viável, mas alguns clientes pagam preços baixos que não cobrem a alocação de custo — revisar mix de canais.
+              </div>
+            </div>
+          )}
+
         </div>
       )}
 
@@ -544,17 +642,77 @@ export default function MarginPage({ rows }) {
                         <td className="py-2 pr-3 text-right font-semibold text-red-600">{BRLFULL(r.profit)}</td>
                         <td className="py-2 pr-3 text-right font-semibold text-red-600 tabular-nums">{marginPct.toFixed(2)}%</td>
                         <td className="py-2">
-                          {r.lossReason ? (
-                            <span
-                              className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold text-white whitespace-nowrap"
-                              style={{ background: cfg.color }}
-                              title={cfg.label}
-                            >
-                              {cfg.short}
-                            </span>
-                          ) : (
-                            <span className="text-slate-300">—</span>
-                          )}
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {r.lossReason ? (
+                                <span
+                                  className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold text-white whitespace-nowrap"
+                                  style={{ background: cfg.color }}
+                                  title={cfg.label}
+                                >
+                                  {cfg.short}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300">—</span>
+                              )}
+                              {/* Botão de auditoria — aparece quando o item tem idEscala vinculado */}
+                              {r.idEscala > 0 && (
+                                <button
+                                  onClick={() => setScaleAuditEscala(r.idEscala)}
+                                  className="text-[10px] text-orange-600 hover:text-orange-800 underline decoration-dashed whitespace-nowrap"
+                                  title={`Auditar escala #${r.idEscala} — ver todos os itens desta operação`}
+                                >
+                                  Escala #{r.idEscala}
+                                </button>
+                              )}
+                            </div>
+                            {/* ── Linha secundária: cobertura quantitativa ── */}
+                            {cfg.group === 'Venda' && r.costBaseNet > 0 && (
+                              // Falha na Venda: mostra quanto % do NET foi coberto
+                              // < 100% confirma o diagnóstico; quanto menor, pior o erro de precificação
+                              (() => {
+                                const pct = (r.revenue / r.costBaseNet) * 100;
+                                const color = pct < 70 ? '#ef4444' : pct < 90 ? '#f97316' : '#ca8a04';
+                                return (
+                                  <span
+                                    className="text-[9px] tabular-nums"
+                                    style={{ color }}
+                                    title={`Faturamento cobriu ${pct.toFixed(1)}% do custo NET do fornecedor. Abaixo de 100% confirma Falha na Venda.`}
+                                  >
+                                    {pct.toFixed(0)}% do NET
+                                  </span>
+                                );
+                              })()
+                            )}
+                            {cfg.group === 'Escala' && r.costBaseNet > 0 && (
+                              // Falha na Escala: distingue se o problema foi preço (abaixo do NET) ou escala real
+                              (() => {
+                                const gapNet   = r.revenue - r.costBaseNet;
+                                const belowNet = gapNet < 0;
+                                const covScale = r.costScale > 0
+                                  ? (gapNet / r.costScale) * 100
+                                  : null;
+                                return (
+                                  <div className="flex flex-col gap-px">
+                                    <span
+                                      className={`text-[9px] tabular-nums font-semibold ${belowNet ? 'text-red-600' : 'text-slate-500'}`}
+                                      title={`Faturamento − NET fornecedor = ${BRLFULL(gapNet)}. ${belowNet ? 'NEGATIVO: a venda foi o problema real (preço abaixo do fornecedor), não a escala.' : 'POSITIVO: cobriu o fornecedor, o custo da escala consumiu a margem.'}`}
+                                    >
+                                      {belowNet ? '⚠ abaixo do NET' : `+${BRLFULL(gapNet)} s/ NET`}
+                                    </span>
+                                    {covScale !== null && !belowNet && (
+                                      <span
+                                        className="text-[9px] text-orange-500 tabular-nums"
+                                        title={`Cobriu ${covScale.toFixed(1)}% do custo de escala. Abaixo de 100% = custo operacional consumiu toda a margem.`}
+                                      >
+                                        {covScale.toFixed(0)}% da escala coberta
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -647,5 +805,15 @@ export default function MarginPage({ rows }) {
       </div>
 
     </div>
+
+    {/* ScaleAuditModal — abre ao clicar em "Escala #xxx" na tabela de prejuízos */}
+    {scaleAuditEscala !== null && (
+      <ScaleAuditModal
+        rows={rows}
+        idEscala={scaleAuditEscala}
+        onClose={() => setScaleAuditEscala(null)}
+      />
+    )}
+    </>
   );
 }

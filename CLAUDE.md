@@ -29,6 +29,9 @@ src/
   pages/IntelligencePage.jsx — Lead Time, Heat Map, RFM, Concentração Fornecedores
   pages/ComparativosPage.jsx — Comparação entre dois períodos
   FlowApp.jsx               — App separado: Fluxo Operacional (pax por dia)
+  components/PaxCompositionBar.jsx  — Mini stacked-bar de composição ADT/CHD/COL/RED/SEN/FREE
+  components/PaxAuditModal.jsx      — Modal de auditoria de deduplicação de pax por venda
+  components/ScaleAuditModal.jsx    — Modal de auditoria de escala operacional (idEscala)
 ```
 
 ---
@@ -168,6 +171,42 @@ Estes campos existem na API mas não são normalizados em campos separados — j
 | 7 | `per_mkpliquido` | Gerado sobre `total_resultadoab` bruto — **NUNCA usar para % Rent agregado** |
 | 8 | `nadt`+`nchd`+`ncolo`+`red`+`nmidade`+`free` | Soma das categorias pode ≠ `num_pax` (data quality API) — `PaxAuditModal` exibe badge `⚠` quando há discrepância |
 | 9 | `idseqitens` / `idseqintens` | API usa ambas as grafias para o mesmo campo — `normalize.js` faz fallback `raw.idseqintens \|\| raw.idseqitens` |
+
+---
+
+## Auditoria de Escala Operacional
+
+### Conceito
+
+`idEscala` vincula múltiplos itens de venda à mesma operação física (mesmo guia/veículo/saída). A API calcula e aloca `custo_escala_operacional` por item — esse custo pode variar entre itens da mesma escala conforme alocação proporcional.
+
+**A análise correta deve ser feita na escala como unidade, não no item isolado.**
+
+### Diagnóstico automático da API (`indicador_origem_prejuizo`)
+
+| Valor | `lossReason` normalizado | Grupo |
+|-------|--------------------------|-------|
+| "Lucrativo" | `lossReason = "Lucrativo"` | OK |
+| "Falha na Venda (...)" | `lossReason` com "Venda" | Venda — preço abaixo do NET do fornecedor |
+| "Falha na Escala (...)" | `lossReason` com "Escala" | Escala — margem NET não cobre custo operacional |
+| "Falha Financeira (Taxa...)" | `lossReason` com "Financeira" | Taxas, ADM, provisão |
+| "Falha Comercial (...)" | `lossReason` com "Comercial" | Repasses, comissões, descontos |
+
+### ScaleAuditModal
+
+Aberto ao clicar em **"Escala #xxxxx"** na coluna "Origem" da tabela de prejuízos em `MarginPage`.
+
+Mostra:
+- Waterfall de custos da escala total (revenue → NET → Escala → Outros → Resultado AB)
+- Tabela de todos os itens da escala (incluindo lucrativos e deficitários)
+- Coluna **"Gap NET+Esc"** = `revenue − costBaseNet − costScale`: se negativo, o item foi vendido abaixo do custo operacional
+- Diagnóstico automático: escala totalmente deficitária / mista / lucrativa
+
+### Função `groupByEscala(rows)` em `aggregations.js`
+
+Retorna `{ [idEscala]: { idEscala, product, supplier, checkinDate, items[], revenue, costBaseNet, costScale, profit } }`.  
+Exclui `idEscala === 0` (item sem escala operacional).  
+Usado exclusivamente pelo `ScaleAuditModal`.
 
 ---
 
