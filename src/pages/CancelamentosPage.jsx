@@ -33,8 +33,9 @@ function topNByRevenue(rows, field, n = 10) {
     const key = r[field] || '(sem nome)';
     if (!map[key]) map[key] = { name: key, count: 0, revenue: 0, profit: 0 };
     map[key].count++;
-    map[key].revenue += r.revenue || 0;
-    map[key].profit  += r.profit  || 0;
+    // Usa revenueRaw/profitRaw para mostrar os valores originais da operação
+    map[key].revenue += r.revenueRaw || 0;
+    map[key].profit  += r.profitRaw  || 0;
   }
   return Object.values(map)
     .map(g => ({ ...g, rentPct: g.revenue > 0 ? (g.profit / g.revenue) * 100 : 0 }))
@@ -60,9 +61,10 @@ function monthlyRevTrend(rows) {
     if (!r.emissionDate) continue;
     const d = r.emissionDate;
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    if (!map[key]) map[key] = { month: key, label: fmtMonth(key), revenue: 0, profit: 0, count: 0 };
-    map[key].revenue += r.revenue || 0;
-    map[key].profit  += r.profit  || 0;
+    if (!map[key]) map[key] = { month: key, label: fmtMonth(key), revenue: 0, costImpact: 0, count: 0 };
+    // revenue = total devolvido (revenueRaw); costImpact = só o que realmente impactou o KPI (≤0)
+    map[key].revenue    += r.revenueRaw || 0;
+    map[key].costImpact += Math.min(r.profitRaw || 0, 0);
     map[key].count++;
   }
   return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
@@ -167,14 +169,15 @@ export default function CancelamentosPage({ cancelledRows, rows }) {
 
   // ── Reembolsos ─────────────────────────────────────────────────────────────
   const reembStats = useMemo(() => {
-    const revenue = reembolsoRows.reduce((s, r) => s + (r.revenue || 0), 0);
-    const profit  = reembolsoRows.reduce((s, r) => s + (r.profit  || 0), 0);
+    const lostRevenue = reembolsoRows.reduce((s, r) => s + (r.revenueRaw || 0), 0);
+    const costImpact  = reembolsoRows.reduce((s, r) => s + Math.min(r.profitRaw || 0, 0), 0);
+    const errCount    = reembolsoRows.filter(r => (r.profitRaw || 0) > 0).length;
     return {
       count:       reembolsoRows.length,
       uniqueSales: new Set(reembolsoRows.map(r => r.id).filter(Boolean)).size,
-      revenue,
-      profit,
-      rentPct: revenue > 0 ? (profit / revenue) * 100 : 0,
+      lostRevenue,   // receita que deixamos de ter (total devolvido)
+      costImpact,    // custo real que entra no KPI (≤0)
+      errCount,      // itens com lucro positivo (erro de lançamento)
     };
   }, [reembolsoRows]);
 
@@ -185,7 +188,7 @@ export default function CancelamentosPage({ cancelledRows, rows }) {
   const reembTrend        = useMemo(() => monthlyRevTrend(reembolsoRows), [reembolsoRows]);
 
   const reembSorted = useMemo(() =>
-    [...reembolsoRows].sort((a, b) => (b.revenue || 0) - (a.revenue || 0)),
+    [...reembolsoRows].sort((a, b) => (b.revenueRaw || 0) - (a.revenueRaw || 0)),
   [reembolsoRows]);
 
   const cancelPageCount = Math.ceil(cancelSorted.length / PAGE_SIZE);
@@ -398,7 +401,7 @@ export default function CancelamentosPage({ cancelledRows, rows }) {
                 <RefreshCw className="text-slate-300" size={24} />
               </div>
               <p className="text-slate-500 font-medium">Nenhum reembolso aprovado no período</p>
-              <p className="text-xs text-slate-400 mt-1">Reembolsos Aprovados têm valores financeiros reais e estão incluídos no BI principal</p>
+              <p className="text-xs text-slate-400 mt-1">Ajuste o intervalo de datas para carregar os dados</p>
             </div>
           ) : (
             <>
@@ -406,21 +409,22 @@ export default function CancelamentosPage({ cancelledRows, rows }) {
               <div className="flex items-start gap-2 px-4 py-2.5 rounded-xl border border-fuchsia-200 bg-fuchsia-50 text-xs text-fuchsia-700">
                 <RefreshCw size={14} className="flex-shrink-0 mt-0.5" />
                 <span>
-                  <strong>Itens REEMBOLSO APROVADO possuem valores financeiros reais e estão incluídos em todos os KPIs do BI.</strong>
-                  {' '}Esses registros geram contas a pagar (comissões, repassess) e afetam diretamente o resultado do período.
+                  <strong>Reembolsos NÃO entram no Faturamento Total nem geram lucro nos KPIs do BI.</strong>
+                  {' '}Apenas custos reais (taxas, comissões pagas) de reembolsos com resultado negativo reduzem o Resultado AB do período.
+                  {' '}Lançamentos com lucro positivo são erros operacionais e estão excluídos. O fornecedor exibido é sempre o <strong>fornecedor original</strong> da venda.
                 </span>
               </div>
 
               {/* KPI Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <KPICard title="Reembolsos"     value={reembStats.count}   format="number"   color="fuchsia" icon={RefreshCw}
-                  tooltip="Total de itens com status REEMBOLSO APROVADO. Valores financeiros reais incluídos no BI principal." />
-                <KPICard title="Faturamento"    value={reembStats.revenue} format="currency" color="fuchsia"
-                  tooltip="Faturamento total dos itens em REEMBOLSO APROVADO (campo total_vendas). Incluído no KPI Faturamento Total do BI." />
-                <KPICard title="Resultado AB"   value={reembStats.profit}  format="currency" color={reembStats.profit >= 0 ? 'green' : 'red'}
-                  tooltip="Resultado AB (total_resultadoab) dos reembolsos. Pode ser positivo se a venda era lucrativa antes do reembolso, ou negativo se gerou prejuízo líquido." />
-                <KPICard title="% Rentabilidade" value={reembStats.rentPct} format="percent" color={reembStats.rentPct >= 0 ? 'green' : 'red'}
-                  tooltip="Resultado AB ÷ Faturamento dos itens de reembolso. Indica se as operações que geraram reembolso eram ou não rentáveis." />
+                <KPICard title="Reembolsos"           value={reembStats.count}       format="number"   color="fuchsia" icon={RefreshCw}
+                  tooltip="Total de itens com status REEMBOLSO APROVADO no período." />
+                <KPICard title="Receita Não Realizada" value={reembStats.lostRevenue} format="currency" color="fuchsia"
+                  tooltip="Total devolvido aos clientes (total_vendas original). Essa receita saiu do caixa — não entra no KPI de Faturamento do BI." />
+                <KPICard title="Custo Real no Resultado" value={reembStats.costImpact} format="currency" color={reembStats.costImpact < 0 ? 'red' : 'slate'}
+                  tooltip="Soma dos custos reais incorridos nos reembolsos (taxas, comissões pagas). Apenas os valores negativos reduzem o Resultado AB do período." />
+                <KPICard title="Erros de Lançamento"  value={reembStats.errCount}    format="number"   color={reembStats.errCount > 0 ? 'red' : 'slate'}
+                  tooltip="Reembolsos com resultado positivo na API — impossível operacionalmente, indica erro de lançamento. Esses valores são excluídos do KPI." />
               </div>
 
               {/* Tendência mensal */}
@@ -430,7 +434,7 @@ export default function CancelamentosPage({ cancelledRows, rows }) {
                     Evolução Mensal — Reembolsos Aprovados
                     <InfoTooltip text="Faturamento e resultado dos reembolsos por mês de emissão. Permite identificar concentração temporal de pedidos de reembolso." />
                   </h2>
-                  <p className="text-xs text-slate-400 mb-4">Barras = faturamento · linha verde = Resultado AB · linha pontilhada = qtd</p>
+                  <p className="text-xs text-slate-400 mb-4">Barras = receita devolvida (não entra no KPI) · linha vermelha = custo real no Resultado AB · linha pontilhada = qtd</p>
                   <ResponsiveContainer width="100%" height={220}>
                     <ComposedChart data={reembTrend} margin={{ top: 4, right: 40, bottom: 0, left: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -438,9 +442,9 @@ export default function CancelamentosPage({ cancelledRows, rows }) {
                       <YAxis yAxisId="money" tickFormatter={BRLk} tick={{ fontSize: 11 }} width={62} />
                       <YAxis yAxisId="count" orientation="right" tickFormatter={v => v.toLocaleString('pt-BR')} tick={{ fontSize: 11 }} width={32} />
                       <Tooltip content={<FinTooltip />} />
-                      <Bar  yAxisId="money" dataKey="revenue" name="Faturamento"  fill="#c026d3" opacity={0.85} radius={[3,3,0,0]} />
-                      <Line yAxisId="money" dataKey="profit"  name="Resultado AB" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} type="monotone" />
-                      <Line yAxisId="count" dataKey="count"   name="Qtd"          stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 2.5 }} type="monotone" strokeDasharray="5 3" />
+                      <Bar  yAxisId="money" dataKey="revenue"    name="Receita não realizada" fill="#c026d3" opacity={0.85} radius={[3,3,0,0]} />
+                      <Line yAxisId="money" dataKey="costImpact" name="Custo no Resultado AB" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} type="monotone" />
+                      <Line yAxisId="count" dataKey="count"      name="Qtd"                   stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 2.5 }} type="monotone" strokeDasharray="5 3" />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
@@ -463,7 +467,7 @@ export default function CancelamentosPage({ cancelledRows, rows }) {
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
                     Auditoria de Reembolsos Aprovados
-                    <InfoTooltip text="Lista completa de itens REEMBOLSO APROVADO. Todos os valores financeiros são reais e estão incluídos no BI principal." />
+                    <InfoTooltip text="Lista de itens REEMBOLSO APROVADO. 'Fat. Original' e 'Result. Original' mostram os valores brutos da API. 'Status KPI' indica se o item gerou custo real (incluído no Resultado AB), foi excluído por erro de lançamento, ou não teve impacto." />
                     <span className="ml-1 text-slate-400 font-normal text-xs">({reembolsoRows.length.toLocaleString('pt-BR')} itens)</span>
                   </h2>
                   <ExportButton
@@ -472,24 +476,26 @@ export default function CancelamentosPage({ cancelledRows, rows }) {
                     sections={[{
                       title: 'Reembolsos Aprovados',
                       columns: [
-                        { key: 'id',           label: 'Venda',        type: 'text'     },
-                        { key: 'emissionDate', label: 'Emissão',      type: 'text'     },
-                        { key: 'checkinDate',  label: 'Check-in',     type: 'text'     },
-                        { key: 'filial',       label: 'Filial',       type: 'text'     },
-                        { key: 'vendor',       label: 'Emissor',      type: 'text'     },
-                        { key: 'client',       label: 'Cliente',      type: 'text'     },
-                        { key: 'supplier',     label: 'Fornecedor',   type: 'text'     },
-                        { key: 'product',      label: 'Serviço',      type: 'text'     },
-                        { key: 'passengers',   label: 'Pax',          type: 'number'   },
-                        { key: 'revenue',      label: 'Faturamento',  type: 'currency', total: true },
-                        { key: 'profit',       label: 'Resultado AB', type: 'currency', total: true },
-                        { key: 'rentPct',      label: '% Rent.',      type: 'percent'  },
+                        { key: 'id',                      label: 'Venda',              type: 'text'     },
+                        { key: 'emissionDate',            label: 'Emissão',            type: 'text'     },
+                        { key: 'checkinDate',             label: 'Check-in',           type: 'text'     },
+                        { key: 'filial',                  label: 'Filial',             type: 'text'     },
+                        { key: 'vendor',                  label: 'Emissor',            type: 'text'     },
+                        { key: 'client',                  label: 'Cliente',            type: 'text'     },
+                        { key: 'supplier',                label: 'Fornecedor',         type: 'text'     },
+                        { key: 'refundOriginalVoucherStr',label: 'Vchr. Original',     type: 'text'     },
+                        { key: 'product',                 label: 'Serviço',            type: 'text'     },
+                        { key: 'passengers',              label: 'Pax',                type: 'number'   },
+                        { key: 'revenueRaw',              label: 'Fat. Original',      type: 'currency', total: true },
+                        { key: 'profitRaw',               label: 'Result. Original',   type: 'currency', total: true },
+                        { key: 'statusKpi',               label: 'Status KPI',         type: 'text'     },
                       ],
                       rows: reembSorted.map(r => ({
                         ...r,
                         emissionDate: r.emissionDate ? r.emissionDate.toLocaleDateString('pt-BR') : '-',
                         checkinDate:  r.checkinDate  ? r.checkinDate.toLocaleDateString('pt-BR')  : '-',
-                        rentPct: r.revenue > 0 ? (r.profit / r.revenue) * 100 : null,
+                        refundOriginalVoucherStr: r.refundOriginalVoucher > 0 ? String(r.refundOriginalVoucher) : '—',
+                        statusKpi: (r.profitRaw || 0) < 0 ? 'Custo incluso' : (r.profitRaw || 0) > 0 ? 'Excluído — erro' : 'Sem impacto',
                       })),
                     }]}
                   />
@@ -505,25 +511,27 @@ export default function CancelamentosPage({ cancelledRows, rows }) {
                         <th className="pb-2 pr-3 font-semibold">Emissor</th>
                         <th className="pb-2 pr-3 font-semibold">Cliente</th>
                         <th className="pb-2 pr-3 font-semibold">Fornecedor</th>
+                        <th className="pb-2 pr-3 font-semibold text-center">Vchr. Original</th>
                         <th className="pb-2 pr-3 font-semibold">Serviço</th>
                         <th className="pb-2 pr-3 font-semibold text-right">Pax</th>
-                        <th className="pb-2 pr-3 font-semibold text-right">Faturamento</th>
-                        <th className="pb-2 pr-3 font-semibold text-right">Result. AB</th>
-                        <th className="pb-2 font-semibold text-right">% Rent</th>
+                        <th className="pb-2 pr-3 font-semibold text-right">Fat. Original</th>
+                        <th className="pb-2 pr-3 font-semibold text-right">Result. Original</th>
+                        <th className="pb-2 font-semibold text-center">Status KPI</th>
                       </tr>
                     </thead>
                     <tbody>
                       {reembPageRows.length === 0 && (
-                        <tr><td colSpan={12} className="py-8 text-center text-slate-400">Sem dados na página.</td></tr>
+                        <tr><td colSpan={13} className="py-8 text-center text-slate-400">Sem dados na página.</td></tr>
                       )}
                       {reembPageRows.map((r, i) => {
-                        // revenue=0 com profit<0 = custo puro (taxa/comissão paga sem receita)
-                        // Nesse caso % Rent é matematicamente indefinida — NÃO mostrar 0%
-                        const rentPct    = r.revenue > 0 ? (r.profit / r.revenue) * 100 : null;
-                        const isPureCost = r.revenue === 0 && r.profit < 0;
-                        const isNeg      = r.profit < 0;
+                        const rawProfit = r.profitRaw || 0;
+                        const rawRev    = r.revenueRaw || 0;
+                        const isCost    = rawProfit < 0;                    // custo real — entra no KPI
+                        const isError   = rawProfit > 0;                    // lucro impossível — excluído do KPI
+                        const isZero    = rawProfit === 0 && rawRev === 0;  // sem impacto
+                        const rowBg = isCost ? 'bg-red-50' : isError ? 'bg-amber-50' : 'hover:bg-fuchsia-50';
                         return (
-                          <tr key={`${r.id}-${i}`} className={`border-b border-slate-100 ${isNeg ? 'bg-red-50' : 'hover:bg-fuchsia-50'}`}>
+                          <tr key={`${r.id}-${i}`} className={`border-b border-slate-100 ${rowBg}`}>
                             <td className="py-2 pr-3 font-mono text-slate-500">{r.id}</td>
                             <td className="py-2 pr-3 text-slate-500">{r.emissionDate ? r.emissionDate.toLocaleDateString('pt-BR') : '—'}</td>
                             <td className="py-2 pr-3 text-slate-500">{r.checkinDate  ? r.checkinDate.toLocaleDateString('pt-BR')  : '—'}</td>
@@ -531,21 +539,39 @@ export default function CancelamentosPage({ cancelledRows, rows }) {
                             <td className="py-2 pr-3 text-slate-600 max-w-[8rem] truncate" title={r.vendor}>{r.vendor || '—'}</td>
                             <td className="py-2 pr-3 text-slate-700 font-medium max-w-[9rem] truncate" title={r.client}>{r.client || '—'}</td>
                             <td className="py-2 pr-3 text-slate-600 max-w-[9rem] truncate" title={r.supplier}>{r.supplier || '—'}</td>
+                            <td className="py-2 pr-3 text-center">
+                              {r.refundOriginalVoucher > 0 ? (
+                                <span
+                                  className="inline-block font-mono text-[10px] bg-fuchsia-100 text-fuchsia-700 px-1.5 py-0.5 rounded"
+                                  title="Voucher original que originou este reembolso"
+                                >
+                                  #{r.refundOriginalVoucher}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300">—</span>
+                              )}
+                            </td>
                             <td className="py-2 pr-3 text-slate-600 max-w-[11rem] truncate" title={r.product}>{r.product || '—'}</td>
                             <td className="py-2 pr-3 text-right text-slate-600 tabular-nums">{r.passengers || '—'}</td>
-                            <td className="py-2 pr-3 text-right text-slate-700 tabular-nums">{BRLFULL(r.revenue)}</td>
-                            <td className={`py-2 pr-3 text-right font-semibold tabular-nums ${isNeg ? 'text-red-600' : 'text-emerald-700'}`}>
-                              {BRLFULL(r.profit)}
+                            <td className="py-2 pr-3 text-right text-slate-600 tabular-nums">{BRLFULL(rawRev)}</td>
+                            <td className={`py-2 pr-3 text-right font-semibold tabular-nums ${isCost ? 'text-red-600' : isError ? 'text-amber-600' : 'text-slate-400'}`}>
+                              {BRLFULL(rawProfit)}
                             </td>
-                            <td className={`py-2 text-right tabular-nums ${(rentPct !== null && rentPct < 0) || isPureCost ? 'text-red-600 font-semibold' : 'text-emerald-700 font-semibold'}`}>
-                              {rentPct !== null ? PCTFMT(rentPct) : '—'}
-                              {isPureCost && (
-                                <span
-                                  className="ml-1 text-[9px] font-bold bg-red-200 text-red-700 px-1 py-0.5 rounded"
-                                  title="Custo incorrido sem receita — taxa ou comissão paga sem faturamento correspondente. O impacto de -R$ X já está no Resultado AB do KPI principal."
-                                >
-                                  custo
+                            <td className="py-2 text-center">
+                              {isCost && (
+                                <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-700"
+                                  title="Custo real (taxa/comissão paga). Este valor negativo reduz o Resultado AB do período.">
+                                  custo incluso
                                 </span>
+                              )}
+                              {isError && (
+                                <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700"
+                                  title="Lucro positivo em reembolso é erro de lançamento. Receita e resultado excluídos do KPI.">
+                                  erro excluído
+                                </span>
+                              )}
+                              {isZero && (
+                                <span className="text-slate-300 text-[10px]">sem impacto</span>
                               )}
                             </td>
                           </tr>
@@ -555,14 +581,13 @@ export default function CancelamentosPage({ cancelledRows, rows }) {
                     {reembolsoRows.length > 0 && (
                       <tfoot>
                         <tr className="border-t-2 border-slate-300 font-semibold text-slate-700 bg-slate-50">
-                          <td className="pt-2 pr-3 text-xs" colSpan={9}>TOTAL</td>
-                          <td className="pt-2 pr-3 text-right text-xs tabular-nums">{BRLFULL(reembStats.revenue)}</td>
-                          <td className={`pt-2 pr-3 text-right text-xs tabular-nums ${reembStats.profit < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
-                            {BRLFULL(reembStats.profit)}
+                          <td className="pt-2 pr-3 text-xs" colSpan={10}>TOTAL</td>
+                          <td className="pt-2 pr-3 text-right text-xs tabular-nums">{BRLFULL(reembStats.lostRevenue)}</td>
+                          <td className={`pt-2 pr-3 text-right text-xs tabular-nums ${reembStats.costImpact < 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                            {BRLFULL(reembStats.costImpact)}
+                            <span className="ml-1 font-normal text-[9px] text-slate-400">no KPI</span>
                           </td>
-                          <td className={`pt-2 text-right text-xs tabular-nums ${reembStats.rentPct < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
-                            {PCTFMT(reembStats.rentPct)}
-                          </td>
+                          <td />
                         </tr>
                       </tfoot>
                     )}

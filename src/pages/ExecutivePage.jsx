@@ -105,13 +105,20 @@ export default function ExecutivePage({ rows }) {
   const reembolsoSummary = useMemo(() => {
     const items = rows.filter(r => r.idStatusServico === 28);
     if (items.length === 0) return null;
-    const revenue = items.reduce((s, r) => s + (r.revenue || 0), 0);
-    const profit  = items.reduce((s, r) => s + (r.profit  || 0), 0);
+    // lostRevenue: receita que deixamos de ter (total devolvido — não entra no KPI principal)
+    const lostRevenue = items.reduce((s, r) => s + (r.revenueRaw || 0), 0);
+    // costImpact: custo real que reduz o Resultado AB (já é min(profitRaw,0) via normalize)
+    const costImpact  = items.reduce((s, r) => s + (r.profit || 0), 0);
+    // errCount: itens com lucro positivo = erro de lançamento, excluídos do KPI
+    const errCount    = items.filter(r => (r.profitRaw || 0) > 0).length;
+    // revShare relativo ao faturamento bruto total (KPI já exclui reembolsos)
+    const grossRevenue = kpis.revenue + lostRevenue;
     return {
-      count:    items.length,
-      revenue,
-      profit,
-      revShare: kpis.revenue > 0 ? (revenue / kpis.revenue) * 100 : 0,
+      count: items.length,
+      lostRevenue,
+      costImpact,
+      errCount,
+      lostRevShare: grossRevenue > 0 ? (lostRevenue / grossRevenue) * 100 : 0,
     };
   }, [rows, kpis.revenue]);
   // Diagnóstico de perda para callout executivo
@@ -297,28 +304,35 @@ export default function ExecutivePage({ rows }) {
           <div className="flex-1 min-w-0">
             <span className="font-semibold text-fuchsia-800">
               {reembolsoSummary.count} Reembolso{reembolsoSummary.count !== 1 ? 's' : ''} Aprovado{reembolsoSummary.count !== 1 ? 's' : ''} no período
-              {reembolsoSummary.revenue > 0 && ` — ${reembolsoSummary.revShare.toFixed(1)}% do faturamento total`}
             </span>
-            {reembolsoSummary.profit < 0 && (
+            {reembolsoSummary.costImpact < 0 && (
               <span className="text-red-600 font-semibold ml-2">
-                · impacto negativo de {BRLFULL(Math.abs(reembolsoSummary.profit))} no Resultado AB
+                · custo real de {BRLFULL(Math.abs(reembolsoSummary.costImpact))} no Resultado AB
+              </span>
+            )}
+            {reembolsoSummary.errCount > 0 && (
+              <span className="text-amber-600 ml-2">
+                · {reembolsoSummary.errCount} lançamento{reembolsoSummary.errCount !== 1 ? 's' : ''} com erro excluído{reembolsoSummary.errCount !== 1 ? 's' : ''} do KPI
               </span>
             )}
             <span className="text-fuchsia-500 ml-2">→ Detalhes na aba Cancelamentos</span>
           </div>
           <div className="flex items-center gap-4 shrink-0">
-            {reembolsoSummary.revenue > 0 && (
+            {reembolsoSummary.lostRevenue > 0 && (
               <div className="text-right">
-                <p className="text-[10px] text-fuchsia-500 uppercase tracking-wide">Faturamento</p>
-                <p className="font-semibold text-fuchsia-800 tabular-nums">{BRLFULL(reembolsoSummary.revenue)}</p>
+                <p className="text-[10px] text-fuchsia-500 uppercase tracking-wide">Receita não realizada</p>
+                <p className="font-semibold text-fuchsia-800 tabular-nums" title={`${reembolsoSummary.lostRevShare.toFixed(1)}% do faturamento bruto total`}>
+                  {BRLFULL(reembolsoSummary.lostRevenue)}
+                </p>
+                <p className="text-[10px] text-fuchsia-400">{reembolsoSummary.lostRevShare.toFixed(1)}% do bruto</p>
               </div>
             )}
-            <div className="text-right">
-              <p className="text-[10px] text-fuchsia-500 uppercase tracking-wide">Resultado AB</p>
-              <p className={`font-semibold tabular-nums ${reembolsoSummary.profit < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
-                {BRLFULL(reembolsoSummary.profit)}
-              </p>
-            </div>
+            {reembolsoSummary.costImpact < 0 && (
+              <div className="text-right">
+                <p className="text-[10px] text-red-400 uppercase tracking-wide">Custo no KPI</p>
+                <p className="font-semibold text-red-600 tabular-nums">{BRLFULL(reembolsoSummary.costImpact)}</p>
+              </div>
+            )}
           </div>
         </div>
       )}

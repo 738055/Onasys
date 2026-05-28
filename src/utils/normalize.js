@@ -18,6 +18,15 @@ function parseBRDate(v) {
 }
 
 export function normalizeRow(raw) {
+  // ─── Reembolso: ajuste de KPI ─────────────────────────────────────────────
+  // Itens REEMBOLSO APROVADO (idStatusServico=28) nunca geram receita real nem lucro.
+  // Regra: revenue=0 sempre; profit=min(rawProfit,0) — apenas custos reais passam.
+  // Valores originais da API preservados em revenueRaw/profitRaw para auditoria.
+  const isRefund        = parseNum(raw.idstatusservico ?? raw.idStatusServico) === 28;
+  const rawRevenue      = parseNum(raw.total_vendas);
+  const rawProfit       = parseNum(raw.total_resultadoab);
+  const rawProfitLiq    = parseNum(raw.total_liquido);
+
   return {
     id:            raw.venda,
     emissionDate:  parseISODate(raw.ddataemissao),
@@ -26,7 +35,12 @@ export function normalizeRow(raw) {
     channel:       String(raw.tipoturismo   || '').trim(),
     clientType:    String(raw.rede          || '').trim(),
     client:        String(raw.cliente || raw.nmfantasia || '').trim(),
-    supplier:      String(raw.nomefornecedor || '').trim(),
+    // Para itens de reembolso (FornecedorOriginalReembolso preenchido), usa o fornecedor real
+    // em vez de "REEMBOLSO - RECEPTIVO" — corrige KPIs de fornecedor em todo o BI.
+    supplier: (() => {
+      const original = String(raw.FornecedorOriginalReembolso || '').trim();
+      return original || String(raw.nomefornecedor || '').trim();
+    })(),
     product:       String(raw.nomeservico   || '').trim(),
     segment:       String(raw.dsCateg       || '').trim(),
     state:         String(raw.dsestado      || '').trim(),
@@ -39,13 +53,13 @@ export function normalizeRow(raw) {
     // Fallback: API pode retornar "Num_pax" (capital N) ou "num_pax" (snake_case original).
     passengers:    parseNum(raw.Num_pax ?? raw.num_pax),
     nights:        parseNum(raw.num_noites),
-    revenue:       parseNum(raw.total_vendas),
-    // profit        = total_resultadoab: valor final após todos os custos.
-    //                 → KPI "Líquido" (ExecutivePage) e base da % Rentabilidade.
-    // profitLiquido = total_liquido: antes de deduzir comissão do emissor.
-    //                 → Coluna "Líquido" nas tabelas (par com "Resultado AB").
-    profit:        parseNum(raw.total_resultadoab),
-    profitLiquido: parseNum(raw.total_liquido),
+    // revenue/profit ajustados para KPI: reembolsos não geram receita nem lucro.
+    revenue:       isRefund ? 0                         : rawRevenue,
+    profit:        isRefund ? Math.min(rawProfit, 0)    : rawProfit,
+    profitLiquido: isRefund ? Math.min(rawProfitLiq, 0) : rawProfitLiq,
+    // Valores originais da API — usados na aba Reembolsos e no callout executivo.
+    revenueRaw:    rawRevenue,
+    profitRaw:     rawProfit,
     commissionEmissor:   parseNum(raw.total_com_emissor),
     marginPct:           parseNum(raw.per_mkpliquido),
 
@@ -63,6 +77,12 @@ export function normalizeRow(raw) {
     // idStatusServico: 4 = CANCELADO (excluído do BI principal), 28 = REEMBOLSO APROVADO
     idStatusServico: parseNum(raw.idstatusservico ?? raw.idStatusServico),
     dsStatusServico: String(raw.dsstatusservico || raw.dsStatusServico || '').trim(),
+
+    // ─── Vínculo de reembolso ─────────────────────────────────────────────
+    // refundOriginalVoucher: Voucher do item original que foi reembolsado (0 = não é reembolso)
+    // refundOriginalSupplier: Nome do fornecedor original antes do reembolso
+    refundOriginalVoucher:  parseNum(raw.IDItemReembolsoOriginal),
+    refundOriginalSupplier: String(raw.FornecedorOriginalReembolso || '').trim(),
 
     // ─── Diagnóstico de resultado ──────────────────────────────────────────
     // lossReason: classificação calculada pelo servidor (API SQL) via CASE WHEN.
