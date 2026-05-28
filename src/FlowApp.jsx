@@ -132,8 +132,8 @@ export default function FlowApp() {
   const now = new Date();
   const [year,             setYear]             = useState(now.getFullYear());
   const [month,            setMonth]            = useState(now.getMonth());
-  const [nSistema,         setNSistema]         = useState(0);
-  const [draftNSistema,    setDraftNSistema]    = useState(0);
+  const [nSistema,         setNSistema]         = useState(1);
+  const [draftNSistema,    setDraftNSistema]    = useState(1);
   const [selectedDay,      setSelectedDay]      = useState(null);
   const [viewMode,         setViewMode]         = useState('resumo');
   const [sortCol,          setSortCol]          = useState('product');
