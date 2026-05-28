@@ -489,7 +489,7 @@ export default function CancelamentosPage({ cancelledRows, rows }) {
                         ...r,
                         emissionDate: r.emissionDate ? r.emissionDate.toLocaleDateString('pt-BR') : '-',
                         checkinDate:  r.checkinDate  ? r.checkinDate.toLocaleDateString('pt-BR')  : '-',
-                        rentPct: r.revenue > 0 ? (r.profit / r.revenue) * 100 : 0,
+                        rentPct: r.revenue > 0 ? (r.profit / r.revenue) * 100 : null,
                       })),
                     }]}
                   />
@@ -517,8 +517,11 @@ export default function CancelamentosPage({ cancelledRows, rows }) {
                         <tr><td colSpan={12} className="py-8 text-center text-slate-400">Sem dados na página.</td></tr>
                       )}
                       {reembPageRows.map((r, i) => {
-                        const rentPct = r.revenue > 0 ? (r.profit / r.revenue) * 100 : 0;
-                        const isNeg   = r.profit < 0;
+                        // revenue=0 com profit<0 = custo puro (taxa/comissão paga sem receita)
+                        // Nesse caso % Rent é matematicamente indefinida — NÃO mostrar 0%
+                        const rentPct    = r.revenue > 0 ? (r.profit / r.revenue) * 100 : null;
+                        const isPureCost = r.revenue === 0 && r.profit < 0;
+                        const isNeg      = r.profit < 0;
                         return (
                           <tr key={`${r.id}-${i}`} className={`border-b border-slate-100 ${isNeg ? 'bg-red-50' : 'hover:bg-fuchsia-50'}`}>
                             <td className="py-2 pr-3 font-mono text-slate-500">{r.id}</td>
@@ -534,8 +537,16 @@ export default function CancelamentosPage({ cancelledRows, rows }) {
                             <td className={`py-2 pr-3 text-right font-semibold tabular-nums ${isNeg ? 'text-red-600' : 'text-emerald-700'}`}>
                               {BRLFULL(r.profit)}
                             </td>
-                            <td className={`py-2 text-right font-semibold tabular-nums ${rentPct < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
-                              {PCTFMT(rentPct)}
+                            <td className={`py-2 text-right tabular-nums ${(rentPct !== null && rentPct < 0) || isPureCost ? 'text-red-600 font-semibold' : 'text-emerald-700 font-semibold'}`}>
+                              {rentPct !== null ? PCTFMT(rentPct) : '—'}
+                              {isPureCost && (
+                                <span
+                                  className="ml-1 text-[9px] font-bold bg-red-200 text-red-700 px-1 py-0.5 rounded"
+                                  title="Custo incorrido sem receita — taxa ou comissão paga sem faturamento correspondente. O impacto de -R$ X já está no Resultado AB do KPI principal."
+                                >
+                                  custo
+                                </span>
+                              )}
                             </td>
                           </tr>
                         );

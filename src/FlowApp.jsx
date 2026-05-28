@@ -133,6 +133,7 @@ export default function FlowApp() {
   const [year,             setYear]             = useState(now.getFullYear());
   const [month,            setMonth]            = useState(now.getMonth());
   const [nSistema,         setNSistema]         = useState(0);
+  const [draftNSistema,    setDraftNSistema]    = useState(0);
   const [selectedDay,      setSelectedDay]      = useState(null);
   const [viewMode,         setViewMode]         = useState('resumo');
   const [sortCol,          setSortCol]          = useState('product');
@@ -378,12 +379,34 @@ export default function FlowApp() {
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-500">Perfil:</span>
-            {[{ label: 'Emissivo', value: 0 }, { label: 'Receptivo', value: 1 }].map(p => (
-              <button key={p.value} onClick={() => setNSistema(p.value)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${nSistema === p.value ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                {p.label}
+            {[{ label: 'Emissivo', value: 0 }, { label: 'Receptivo', value: 1 }].map(p => {
+              const isDraft   = p.value === draftNSistema;
+              const isPending = isDraft && draftNSistema !== nSistema;
+              return (
+                <button key={p.value} onClick={() => setDraftNSistema(p.value)}
+                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
+                    isPending
+                      ? 'bg-amber-400 text-white ring-2 ring-amber-300 ring-offset-1'
+                      : isDraft
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}>
+                  {p.label}{isPending && <span className="ml-1 text-[10px] opacity-80">*</span>}
+                </button>
+              );
+            })}
+            {draftNSistema !== nSistema && (
+              <button
+                onClick={() => setNSistema(draftNSistema)}
+                className="relative px-4 py-1.5 rounded text-sm font-semibold bg-amber-500 text-white shadow ring-2 ring-amber-300 ring-offset-1 hover:bg-amber-600 transition-all"
+              >
+                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+                </span>
+                Aplicar
               </button>
-            ))}
+            )}
           </div>
         </div>
       </header>
