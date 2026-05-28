@@ -101,6 +101,19 @@ export default function ExecutivePage({ rows }) {
   // Filtered-period computations (KPIs, exports)
   const kpis          = useMemo(() => calcKPIs(rows), [rows]);
   const saleTypeGroups = useMemo(() => groupBySaleType(rows), [rows]);
+
+  const reembolsoSummary = useMemo(() => {
+    const items = rows.filter(r => r.idStatusServico === 28);
+    if (items.length === 0) return null;
+    const revenue = items.reduce((s, r) => s + (r.revenue || 0), 0);
+    const profit  = items.reduce((s, r) => s + (r.profit  || 0), 0);
+    return {
+      count:    items.length,
+      revenue,
+      profit,
+      revShare: kpis.revenue > 0 ? (revenue / kpis.revenue) * 100 : 0,
+    };
+  }, [rows, kpis.revenue]);
   // Diagnóstico de perda para callout executivo
   const lossDiag     = useMemo(() => lossDiagnosticTotals(rows), [rows]);
   const lossInsight  = useMemo(() => {
@@ -273,6 +286,39 @@ export default function ExecutivePage({ rows }) {
                 {g.group} {g.share.toFixed(0)}%
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Callout de Reembolsos Aprovados ── */}
+      {reembolsoSummary && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-fuchsia-200 bg-fuchsia-50 text-xs">
+          <span className="text-base flex-shrink-0">🔄</span>
+          <div className="flex-1 min-w-0">
+            <span className="font-semibold text-fuchsia-800">
+              {reembolsoSummary.count} Reembolso{reembolsoSummary.count !== 1 ? 's' : ''} Aprovado{reembolsoSummary.count !== 1 ? 's' : ''} no período
+              {reembolsoSummary.revenue > 0 && ` — ${reembolsoSummary.revShare.toFixed(1)}% do faturamento total`}
+            </span>
+            {reembolsoSummary.profit < 0 && (
+              <span className="text-red-600 font-semibold ml-2">
+                · impacto negativo de {BRLFULL(Math.abs(reembolsoSummary.profit))} no Resultado AB
+              </span>
+            )}
+            <span className="text-fuchsia-500 ml-2">→ Detalhes na aba Cancelamentos</span>
+          </div>
+          <div className="flex items-center gap-4 shrink-0">
+            {reembolsoSummary.revenue > 0 && (
+              <div className="text-right">
+                <p className="text-[10px] text-fuchsia-500 uppercase tracking-wide">Faturamento</p>
+                <p className="font-semibold text-fuchsia-800 tabular-nums">{BRLFULL(reembolsoSummary.revenue)}</p>
+              </div>
+            )}
+            <div className="text-right">
+              <p className="text-[10px] text-fuchsia-500 uppercase tracking-wide">Resultado AB</p>
+              <p className={`font-semibold tabular-nums ${reembolsoSummary.profit < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                {BRLFULL(reembolsoSummary.profit)}
+              </p>
+            </div>
           </div>
         </div>
       )}

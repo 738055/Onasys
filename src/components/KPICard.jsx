@@ -1,12 +1,13 @@
 import { InfoTooltip } from './InfoTooltip';
 
 const STYLES = {
-  blue:   'bg-blue-50    border-blue-100    text-blue-800',
-  green:  'bg-emerald-50 border-emerald-100 text-emerald-800',
-  amber:  'bg-amber-50   border-amber-100   text-amber-800',
-  slate:  'bg-slate-50   border-slate-200   text-slate-700',
-  red:    'bg-red-50     border-red-100     text-red-800',
-  indigo: 'bg-indigo-50  border-indigo-100  text-indigo-800',
+  blue:    'bg-blue-50    border-blue-100    text-blue-800',
+  green:   'bg-emerald-50 border-emerald-100 text-emerald-800',
+  amber:   'bg-amber-50   border-amber-100   text-amber-800',
+  slate:   'bg-slate-50   border-slate-200   text-slate-700',
+  red:     'bg-red-50     border-red-100     text-red-800',
+  indigo:  'bg-indigo-50  border-indigo-100  text-indigo-800',
+  fuchsia: 'bg-fuchsia-50 border-fuchsia-100 text-fuchsia-800',
 };
 
 function fmt(value, format) {

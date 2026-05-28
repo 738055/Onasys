@@ -59,6 +59,11 @@ export function normalizeRow(raw) {
     paxSen:  parseNum(raw.nmidade),       // Melhor idade / Sênior
     paxFree: parseNum(raw.free),          // Cortesia (agentes de viagem, cortesia...)
 
+    // ─── Status do serviço ────────────────────────────────────────────────
+    // idStatusServico: 4 = CANCELADO (excluído do BI principal), 28 = REEMBOLSO APROVADO
+    idStatusServico: parseNum(raw.idstatusservico ?? raw.idStatusServico),
+    dsStatusServico: String(raw.dsstatusservico || raw.dsStatusServico || '').trim(),
+
     // ─── Diagnóstico de resultado ──────────────────────────────────────────
     // lossReason: classificação calculada pelo servidor (API SQL) via CASE WHEN.
     //   "Lucrativo" | "Falha na Venda (...)" | "Falha na Escala (...)"
