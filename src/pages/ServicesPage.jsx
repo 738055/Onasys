@@ -4,12 +4,29 @@ import {
   CartesianGrid, Tooltip, PieChart, Pie, Cell,
 } from 'recharts';
 import { groupByClientOrVendor, topNByField, revenuePerPax, revenuePerNight, itemsPerSale } from '../utils/aggregations';
-import { BRLFULL, BRLk, PCTFMT, SEGMENT_CFG } from '../utils/format';
+import { BRLFULL, BRLk, PCTFMT, SEGMENT_CFG, saleTypeColor, saleTypeLabel } from '../utils/format';
 import { KPICard } from '../components/KPICard';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { ExportButton } from '../components/ExportButton';
 
 const PAGE_SIZE = 30;
+
+// Mini stacked-bar de split Faturado/Extra — coluna "Tipo" no ranking de serviços
+function SaleTypeBar({ breakdown, totalRevenue }) {
+  if (!breakdown || totalRevenue <= 0) return <span className="text-slate-200 text-xs">—</span>;
+  const entries = Object.entries(breakdown).sort((a, b) => b[1].revenue - a[1].revenue);
+  if (entries.length < 2) return <span className="text-slate-400 text-[10px]">{entries[0]?.[0] ? saleTypeLabel(entries[0][0]) : '—'}</span>;
+  return (
+    <div
+      className="flex h-2 w-14 rounded overflow-hidden cursor-default mx-auto"
+      title={entries.map(([t, v]) => `${saleTypeLabel(t)}: ${((v.revenue / totalRevenue) * 100).toFixed(0)}%`).join(' | ')}
+    >
+      {entries.map(([type, vals]) => (
+        <div key={type} style={{ width: `${(vals.revenue / totalRevenue) * 100}%`, background: saleTypeColor(type) }} />
+      ))}
+    </div>
+  );
+}
 
 // Tooltip customizado para gráfico Receita/Pax
 function PaxTooltip({ active, payload }) {
@@ -526,6 +543,10 @@ export default function ServicesPage({ rows }) {
                 <th className="pb-2 pr-3 font-semibold">Serviço</th>
                 <th className="pb-2 pr-3 font-semibold text-right">Faturamento</th>
                 <th className="pb-2 pr-3 font-semibold text-right">Pax (itens)</th>
+                <th className="pb-2 pr-3 font-semibold text-center">
+                  Tipo
+                  <span className="block text-[10px] font-normal text-slate-400 leading-tight">Fat/Extra</span>
+                </th>
                 <th className="pb-2 pr-3 font-semibold text-right">Líquido</th>
                 <th className="pb-2 pr-3 font-semibold text-right">% Rent</th>
                 <th className="pb-2 font-semibold text-right">Resultado AB</th>
@@ -546,6 +567,9 @@ export default function ServicesPage({ rows }) {
                     <td className="py-2 pr-3 font-medium text-slate-700 max-w-[20rem] truncate" title={g.name}>{g.name}</td>
                     <td className="py-2 pr-3 text-right text-slate-700">{BRLFULL(g.revenue)}</td>
                     <td className="py-2 pr-3 text-right text-slate-500">{g.passengers.toLocaleString('pt-BR')}</td>
+                    <td className="py-2 pr-3 text-center">
+                      <SaleTypeBar breakdown={g.saleTypeBreakdown} totalRevenue={g.revenue} />
+                    </td>
                     <td className={`py-2 pr-3 text-right font-semibold ${liqNeg ? 'text-red-600' : 'text-emerald-700'}`}>
                       {BRLFULL(g.profitLiquido)}
                     </td>

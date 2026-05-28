@@ -12,6 +12,27 @@ export const SEGMENT_CFG = {
   'S':  { label: 'SERVIÇOS',   color: '#14b8a6' },
 };
 
+// ─── Tipo de Venda (tipovenda) ────────────────────────────────────────────────
+// Paleta: Faturado = azul, Extra = âmbar, outros = slate.
+// Lookup case-insensitive para tolerar variações da API (FATURADO / Faturado / faturado).
+export const SALE_TYPE_COLORS = {
+  'FATURADO': '#3b82f6',
+  'EXTRA':    '#f59e0b',
+};
+
+export function saleTypeColor(type) {
+  if (!type) return '#94a3b8';
+  return SALE_TYPE_COLORS[String(type).toUpperCase()] || '#94a3b8';
+}
+
+export function saleTypeLabel(type) {
+  if (!type) return 'Sem tipo';
+  const up = String(type).toUpperCase();
+  if (up === 'FATURADO') return 'Faturado';
+  if (up === 'EXTRA') return 'Extra';
+  return type;
+}
+
 // ─── Classificação de origem do prejuízo ─────────────────────────────────────
 // Corresponde ao campo lossReason (raw: indicador_origem_prejuizo) da API.
 // Cada entrada: group (Venda/Escala/Financeira/Comercial/OK/Outro),

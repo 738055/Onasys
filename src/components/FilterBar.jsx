@@ -63,14 +63,16 @@ export function FilterBar({
   channel, onChannel,
   clientType, onClientType,
   vendor, onVendor,
+  saleType, onSaleType,
 }) {
-  const hasFilters = filial.length + channel.length + clientType.length + vendor.length > 0;
+  const hasFilters = filial.length + channel.length + clientType.length + vendor.length + saleType.length > 0;
 
   function clearAll() {
     onFilial([]);
     onChannel([]);
     onClientType([]);
     onVendor([]);
+    onSaleType([]);
   }
 
   return (
@@ -81,6 +83,7 @@ export function FilterBar({
         <MultiSelect label="Canal"        options={options.channels}    value={channel}     onChange={onChannel}     />
         <MultiSelect label="Tipo Cliente" options={options.clientTypes} value={clientType}  onChange={onClientType}  />
         <MultiSelect label="Emissor"      options={options.vendors}     value={vendor}      onChange={onVendor}      />
+        <MultiSelect label="Tipo Venda"   options={options.saleTypes}   value={saleType}    onChange={onSaleType}    />
         {hasFilters && (
           <button
             onClick={clearAll}

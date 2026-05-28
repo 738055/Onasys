@@ -54,6 +54,7 @@ export default function App() {
   const [channelFilter,    setChannelFilter]    = useState([]);
   const [clientTypeFilter, setClientTypeFilter] = useState([]);
   const [vendorFilter,     setVendorFilter]     = useState([]);
+  const [saleTypeFilter,   setSaleTypeFilter]   = useState([]);
 
   const { rows: allRows, loading, error } = useDashboardData({
     startDate, endDate, qualPeriodo, nSistema,
@@ -64,14 +65,16 @@ export default function App() {
     if (channelFilter.length    && !channelFilter.includes(r.channel))       return false;
     if (clientTypeFilter.length && !clientTypeFilter.includes(r.clientType)) return false;
     if (vendorFilter.length     && !vendorFilter.includes(r.vendor))         return false;
+    if (saleTypeFilter.length   && !saleTypeFilter.includes(r.saleType))     return false;
     return true;
-  }), [allRows, filialFilter, channelFilter, clientTypeFilter, vendorFilter]);
+  }), [allRows, filialFilter, channelFilter, clientTypeFilter, vendorFilter, saleTypeFilter]);
 
   const filterOptions = useMemo(() => ({
     filiais:     [...new Set(allRows.map(r => r.filial).filter(Boolean))].sort(),
     channels:    [...new Set(allRows.map(r => r.channel).filter(Boolean))].sort(),
     clientTypes: [...new Set(allRows.map(r => r.clientType).filter(Boolean))].sort(),
     vendors:     [...new Set(allRows.map(r => r.vendor).filter(Boolean))].sort(),
+    saleTypes:   [...new Set(allRows.map(r => r.saleType).filter(Boolean))].sort(),
   }), [allRows]);
 
   const exportCtx = useMemo(() => ({
@@ -84,8 +87,9 @@ export default function App() {
       channel:    channelFilter,
       clientType: clientTypeFilter,
       vendor:     vendorFilter,
+      saleType:   saleTypeFilter,
     },
-  }), [startDate, endDate, qualPeriodo, nSistema, filialFilter, channelFilter, clientTypeFilter, vendorFilter]);
+  }), [startDate, endDate, qualPeriodo, nSistema, filialFilter, channelFilter, clientTypeFilter, vendorFilter, saleTypeFilter]);
 
   return (
     <ExportProvider value={exportCtx}>
@@ -223,6 +227,7 @@ export default function App() {
         channel={channelFilter}       onChannel={setChannelFilter}
         clientType={clientTypeFilter} onClientType={setClientTypeFilter}
         vendor={vendorFilter}         onVendor={setVendorFilter}
+        saleType={saleTypeFilter}     onSaleType={setSaleTypeFilter}
       />
 
       {/* Tabs */}

@@ -131,6 +131,8 @@ export function groupByClientOrVendor(rows, groupField) {
       // Breakdown bruto (SUM por item — para visão fornecedor/serviço)
       paxAdt: 0, paxChd: 0, paxColo: 0, paxRed: 0, paxSen: 0, paxFree: 0,
       _vendaMap: {},
+      // Breakdown de faturamento e resultado por tipo de venda (tipovenda)
+      _saleTypeRev: {}, _saleTypeProfit: {},
     };
     map[key].revenue           += r.revenue           || 0;
     map[key].profitLiquido     += r.profitLiquido     || 0;
@@ -144,6 +146,10 @@ export function groupByClientOrVendor(rows, groupField) {
     map[key].paxRed  += r.paxRed  || 0;
     map[key].paxSen  += r.paxSen  || 0;
     map[key].paxFree += r.paxFree || 0;
+    // Acumula receita e resultado por tipo de venda
+    const st = r.saleType || '(sem tipo)';
+    map[key]._saleTypeRev[st]    = (map[key]._saleTypeRev[st]    || 0) + (r.revenue || 0);
+    map[key]._saleTypeProfit[st] = (map[key]._saleTypeProfit[st] || 0) + (r.profit  || 0);
     // Pax único por venda dentro do grupo (para dedup por venda)
     if (r.id) {
       if (!map[key]._vendaMap[r.id]) map[key]._vendaMap[r.id] = {};
@@ -154,7 +160,8 @@ export function groupByClientOrVendor(rows, groupField) {
     }
   }
   return Object.values(map)
-    .map(({ _vendaMap, ...g }) => {
+    .map(item => {
+      const { _vendaMap, _saleTypeRev, _saleTypeProfit, ...g } = item;
       // Dedup: soma o max de cada campo por venda
       const dedup = { adt: 0, chd: 0, colo: 0, red: 0, sen: 0, free: 0, total: 0 };
       for (const v of Object.values(_vendaMap)) {
@@ -166,6 +173,10 @@ export function groupByClientOrVendor(rows, groupField) {
         dedup.free  += v.paxFree  || 0;
         dedup.total += v.passengers || 0;
       }
+      const saleTypeBreakdown = {};
+      for (const st of Object.keys(_saleTypeRev || {})) {
+        saleTypeBreakdown[st] = { revenue: _saleTypeRev[st] || 0, profit: _saleTypeProfit[st] || 0 };
+      }
       return {
         ...g,
         // paxBreakdown (SUM bruto): usado em visão fornecedor/serviço
@@ -174,8 +185,36 @@ export function groupByClientOrVendor(rows, groupField) {
         paxBreakdownUnique: dedup,
         uniquePassengers: dedup.total,
         rentPct: g.revenue !== 0 ? (g.profit / g.revenue) * 100 : null,
+        // saleTypeBreakdown: receita e resultado por tipo de venda dentro do grupo
+        saleTypeBreakdown,
       };
     })
+    .sort((a, b) => b.revenue - a.revenue);
+}
+
+// Agrega todos os registros por tipo de venda (tipovenda).
+// Retorna array ordenado por receita decrescente com revShare (% do total).
+export function groupBySaleType(rows) {
+  const map = {};
+  for (const r of rows) {
+    const key = r.saleType || '(sem tipo)';
+    if (!map[key]) map[key] = {
+      saleType: key, revenue: 0, profit: 0, profitLiquido: 0, passengers: 0, _vendas: new Set(),
+    };
+    map[key].revenue       += r.revenue       || 0;
+    map[key].profit        += r.profit        || 0;
+    map[key].profitLiquido += r.profitLiquido || 0;
+    map[key].passengers    += r.passengers    || 0;
+    if (r.id) map[key]._vendas.add(r.id);
+  }
+  const total = Object.values(map).reduce((s, g) => s + g.revenue, 0);
+  return Object.values(map)
+    .map(({ _vendas, ...g }) => ({
+      ...g,
+      uniqueSales: _vendas.size,
+      rentPct:  g.revenue !== 0 ? (g.profit  / g.revenue) * 100 : 0,
+      revShare: total        !== 0 ? (g.revenue / total)        * 100 : 0,
+    }))
     .sort((a, b) => b.revenue - a.revenue);
 }
 

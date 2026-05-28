@@ -8,8 +8,8 @@ import { TrendingUp, DollarSign, Percent, Users, ShoppingCart, CreditCard, Chevr
 import { KPICard } from '../components/KPICard';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { ExportButton } from '../components/ExportButton';
-import { calcKPIs, groupByMonth, topNByField, groupByClientOrVendor, groupByMonthAndField, lossDiagnosticTotals } from '../utils/aggregations';
-import { BRLFULL, BRLk, SEGMENT_CFG, resolveLossReason } from '../utils/format';
+import { calcKPIs, groupByMonth, topNByField, groupByClientOrVendor, groupByMonthAndField, lossDiagnosticTotals, groupBySaleType } from '../utils/aggregations';
+import { BRLFULL, BRLk, SEGMENT_CFG, resolveLossReason, saleTypeColor, saleTypeLabel } from '../utils/format';
 import { useExportContext } from '../contexts/ExportContext';
 import { useYearData } from '../hooks/useYearData';
 import { PaxAuditModal } from '../components/PaxAuditModal';
@@ -99,7 +99,8 @@ export default function ExecutivePage({ rows }) {
   const { rows: yearRows, loading: yearLoading } = useYearData({ year: selectedYear, qualPeriodo, nSistema });
 
   // Filtered-period computations (KPIs, exports)
-  const kpis         = useMemo(() => calcKPIs(rows), [rows]);
+  const kpis          = useMemo(() => calcKPIs(rows), [rows]);
+  const saleTypeGroups = useMemo(() => groupBySaleType(rows), [rows]);
   // Diagnóstico de perda para callout executivo
   const lossDiag     = useMemo(() => lossDiagnosticTotals(rows), [rows]);
   const lossInsight  = useMemo(() => {
@@ -162,6 +163,19 @@ export default function ExecutivePage({ rows }) {
       return entry;
     });
     return { data: filledData, segments: keys };
+  }, [yearRows, monthKeys]);
+
+  const yearSaleTypeTimeline = useMemo(() => {
+    const { data, keys } = groupByMonthAndField(yearRows, 'saleType');
+    const monthMap = {};
+    data.forEach(m => { monthMap[m.month] = m; });
+    const filledData = monthKeys.map(key => {
+      const m = monthMap[key] || { month: key };
+      const entry = { ...m, label: fmtMonth(key) };
+      keys.forEach(k => { if (entry[k] === undefined) entry[k] = 0; });
+      return entry;
+    });
+    return { data: filledData, saleTypes: keys };
   }, [yearRows, monthKeys]);
 
   // Highlight filter period on the year charts
@@ -260,6 +274,134 @@ export default function ExecutivePage({ rows }) {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ── Análise por Tipo de Venda ── */}
+      {saleTypeGroups.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
+          <div className="flex items-start justify-between gap-2 mb-4">
+            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+              Faturamento por Tipo de Venda
+              <InfoTooltip text="Breakdown por tipo de venda (campo tipovenda da API). Permite comparar volume, margem e rentabilidade entre Faturado (venda convencional) e Extra (serviço adicional), além de outros tipos presentes nos dados." />
+            </h2>
+            <ExportButton
+              title="Faturamento por Tipo de Venda"
+              slug="executivo-tipo-venda"
+              sections={[{
+                title: 'Por Tipo de Venda',
+                columns: [
+                  { key: 'saleType',    label: 'Tipo de Venda',  type: 'text'     },
+                  { key: 'revenue',     label: 'Faturamento',    type: 'currency', total: true },
+                  { key: 'profit',      label: 'Resultado AB',   type: 'currency', total: true },
+                  { key: 'rentPct',     label: '% Rent.',        type: 'percent'  },
+                  { key: 'uniqueSales', label: 'Nº Vendas',      type: 'number'   },
+                  { key: 'revShare',    label: '% do Total',     type: 'percent'  },
+                ],
+                rows: saleTypeGroups,
+              }]}
+            />
+          </div>
+
+          {/* Cards de KPI por tipo */}
+          <div className={`grid gap-3 mb-5 ${saleTypeGroups.length === 1 ? 'grid-cols-1 max-w-xs' : saleTypeGroups.length === 2 ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-4'}`}>
+            {saleTypeGroups.map(g => {
+              const color = saleTypeColor(g.saleType);
+              return (
+                <div
+                  key={g.saleType}
+                  className="rounded-xl border p-4"
+                  style={{ borderColor: color + '40', background: color + '08' }}
+                >
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: color }} />
+                    <span className="text-xs font-bold uppercase tracking-wider" style={{ color }}>
+                      {saleTypeLabel(g.saleType)}
+                    </span>
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    <div>
+                      <p className="text-slate-400">Faturamento</p>
+                      <p className="font-semibold text-slate-800 tabular-nums text-sm">{BRLFULL(g.revenue)}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-400">Resultado AB</p>
+                      <p className={`font-semibold tabular-nums ${g.profit < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                        {BRLFULL(g.profit)}
+                      </p>
+                    </div>
+                    <div className="flex justify-between items-center pt-0.5 border-t border-slate-100">
+                      <span className="text-slate-400">% Rent.</span>
+                      <span className={`font-semibold tabular-nums ${g.rentPct < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                        {g.rentPct.toFixed(2)}%
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400">Nº Vendas</span>
+                      <span className="text-slate-700 tabular-nums">{g.uniqueSales.toLocaleString('pt-BR')}</span>
+                    </div>
+                    <div className="pt-1">
+                      <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                        <span>% do faturamento total</span>
+                        <span className="font-medium" style={{ color }}>{g.revShare.toFixed(1)}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5">
+                        <div
+                          className="h-1.5 rounded-full transition-all"
+                          style={{ width: `${g.revShare}%`, background: color }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Evolução mensal empilhada por tipo — só quando há 2+ tipos */}
+          {yearSaleTypeTimeline.saleTypes.length >= 2 && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-medium text-slate-600">Evolução Mensal por Tipo de Venda</p>
+                <YearNav {...yearNavProps} />
+              </div>
+              <p className="text-xs text-slate-400 mb-3">
+                Faturamento mensal empilhado por tipo
+                {highlightLabels && (
+                  <span className="ml-2 text-blue-400">· Área azul = período filtrado ({highlightLabels.x1}–{highlightLabels.x2})</span>
+                )}
+              </p>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={yearSaleTypeTimeline.data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis tickFormatter={BRLk} tick={{ fontSize: 11 }} width={62} />
+                  <Tooltip content={<SegmentTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  {highlightLabels && (
+                    <ReferenceArea
+                      x1={highlightLabels.x1}
+                      x2={highlightLabels.x2}
+                      fill="#3b82f6"
+                      fillOpacity={0.08}
+                      stroke="#3b82f6"
+                      strokeOpacity={0.25}
+                      strokeWidth={1}
+                    />
+                  )}
+                  {yearSaleTypeTimeline.saleTypes.map(type => (
+                    <Bar
+                      key={type}
+                      dataKey={type}
+                      name={saleTypeLabel(type)}
+                      stackId="st"
+                      fill={saleTypeColor(type)}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       )}
 

@@ -4,7 +4,7 @@ import {
   CartesianGrid, Tooltip, ComposedChart, Line,
 } from 'recharts';
 import { abcCurve, groupByClientOrVendor } from '../utils/aggregations';
-import { BRLFULL, BRLk, PCTFMT } from '../utils/format';
+import { BRLFULL, BRLk, PCTFMT, saleTypeColor, saleTypeLabel } from '../utils/format';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { ExportButton } from '../components/ExportButton';
 import { PaxCompositionBar } from '../components/PaxCompositionBar';
@@ -33,7 +33,25 @@ function VendorTooltip({ active, payload }) {
   );
 }
 
-// Tooltip de composição de pax — aparece ao hover sobre a célula Pax da tabela detalhada
+// Mini stacked-bar de split Faturado/Extra por grupo — aparece na coluna "Tipo" da tabela de agrupamento
+function SaleTypeBar({ breakdown, totalRevenue }) {
+  if (!breakdown || totalRevenue <= 0) return <span className="text-slate-200 text-xs">—</span>;
+  const entries = Object.entries(breakdown).sort((a, b) => b[1].revenue - a[1].revenue);
+  if (entries.length < 2) return <span className="text-slate-400 text-[10px]">{entries[0]?.[0] ? saleTypeLabel(entries[0][0]) : '—'}</span>;
+  return (
+    <div
+      className="flex h-2 w-16 rounded overflow-hidden cursor-default"
+      title={entries.map(([t, v]) => `${saleTypeLabel(t)}: ${((v.revenue / totalRevenue) * 100).toFixed(0)}%`).join(' | ')}
+    >
+      {entries.map(([type, vals]) => (
+        <div
+          key={type}
+          style={{ width: `${(vals.revenue / totalRevenue) * 100}%`, background: saleTypeColor(type) }}
+        />
+      ))}
+    </div>
+  );
+}
 
 export default function SalesPage({ rows }) {
   const [page, setPage] = useState(0);
@@ -303,7 +321,7 @@ export default function SalesPage({ rows }) {
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-panel">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           {(() => {
-            const LABELS = { client: 'Clientes', vendor: 'Emissores', supplier: 'Fornecedores', product: 'Serviços' };
+            const LABELS = { client: 'Clientes', vendor: 'Emissores', supplier: 'Fornecedores', product: 'Serviços', saleType: 'Tipos de Venda' };
             const label  = LABELS[groupField] || groupField;
             return (
               <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1">
@@ -318,10 +336,11 @@ export default function SalesPage({ rows }) {
           <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-medium">
             {[
-              { value: 'client',   label: 'Cliente'    },
-              { value: 'vendor',   label: 'Emissor'    },
-              { value: 'supplier', label: 'Fornecedor' },
-              { value: 'product',  label: 'Serviço'    },
+              { value: 'client',   label: 'Cliente'     },
+              { value: 'vendor',   label: 'Emissor'     },
+              { value: 'supplier', label: 'Fornecedor'  },
+              { value: 'product',  label: 'Serviço'     },
+              { value: 'saleType', label: 'Tipo Venda'  },
             ].map((opt, i) => (
               <button
                 key={opt.value}
@@ -337,12 +356,12 @@ export default function SalesPage({ rows }) {
             ))}
           </div>
           <ExportButton
-            title={`Agrupamento por ${{ client: 'Cliente', vendor: 'Emissor', supplier: 'Fornecedor', product: 'Serviço' }[groupField]}`}
+            title={`Agrupamento por ${{ client: 'Cliente', vendor: 'Emissor', supplier: 'Fornecedor', product: 'Serviço', saleType: 'Tipo de Venda' }[groupField] || groupField}`}
             slug="vendas-agrupamento"
             sections={[{
               title: 'Agrupamento por ' + groupField,
               columns: [
-                { key: 'name',             label: { client: 'Cliente', vendor: 'Emissor', supplier: 'Fornecedor', product: 'Serviço' }[groupField], type: 'text' },
+                { key: 'name',             label: { client: 'Cliente', vendor: 'Emissor', supplier: 'Fornecedor', product: 'Serviço', saleType: 'Tipo de Venda' }[groupField] || 'Nome', type: 'text' },
                 { key: 'revenue',          label: 'Faturamento',        type: 'currency', total: true },
                 { key: 'pax',              label: 'Pax',                type: 'number'   },
                 { key: 'profitLiquido',    label: 'Líquido',            type: 'currency', total: true },
@@ -372,7 +391,7 @@ export default function SalesPage({ rows }) {
               <tr className="border-b border-slate-200 text-slate-500 text-left">
                 <th className="pb-2 pr-3 font-semibold">#</th>
                 <th className="pb-2 pr-3 font-semibold">
-                  {{ client: 'Cliente', vendor: 'Emissor', supplier: 'Fornecedor', product: 'Serviço' }[groupField]}
+                  {{ client: 'Cliente', vendor: 'Emissor', supplier: 'Fornecedor', product: 'Serviço', saleType: 'Tipo de Venda' }[groupField]}
                 </th>
                 <th className="pb-2 pr-3 font-semibold text-right">Total Vendido</th>
                 <th className="pb-2 pr-3 font-semibold text-right">
@@ -382,6 +401,12 @@ export default function SalesPage({ rows }) {
                   Composição
                   <span className="block text-[10px] font-normal text-slate-400 leading-tight">ADT/CHD/…</span>
                 </th>
+                {groupField !== 'saleType' && (
+                  <th className="pb-2 pr-3 font-semibold text-center">
+                    Tipo
+                    <span className="block text-[10px] font-normal text-slate-400 leading-tight">Fat/Extra</span>
+                  </th>
+                )}
                 <th className="pb-2 pr-3 font-semibold text-right">Líquido</th>
                 <th className="pb-2 pr-3 font-semibold text-right">% Rent</th>
                 <th className="pb-2 pr-3 font-semibold text-right">
@@ -397,7 +422,7 @@ export default function SalesPage({ rows }) {
             <tbody>
               {grouped.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400">Sem dados no período.</td>
+                  <td colSpan={groupField !== 'saleType' ? 10 : 9} className="py-8 text-center text-slate-400">Sem dados no período.</td>
                 </tr>
               )}
               {grouped.map((g, i) => {
@@ -417,7 +442,18 @@ export default function SalesPage({ rows }) {
                     className={`border-b border-slate-100 ${isNeg ? 'bg-red-50' : 'hover:bg-slate-50'}`}
                   >
                     <td className="py-2 pr-3 text-slate-400">{i + 1}</td>
-                    <td className="py-2 pr-3 font-medium text-slate-700 max-w-[16rem] truncate" title={g.name}>{g.name}</td>
+                    <td className="py-2 pr-3 font-medium max-w-[16rem] truncate" title={g.name}>
+                      {groupField === 'saleType' ? (
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: saleTypeColor(g.name) }} />
+                          <span style={{ color: saleTypeColor(g.name) }} className="font-bold uppercase tracking-wide text-[11px]">
+                            {saleTypeLabel(g.name)}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-700">{g.name}</span>
+                      )}
+                    </td>
                     <td className="py-2 pr-3 text-right text-slate-700">{BRLFULL(g.revenue)}</td>
                     <td className="py-2 pr-3 text-right text-slate-500">{paxValue.toLocaleString('pt-BR')}</td>
                     <td className="py-2 pr-3">
@@ -429,6 +465,11 @@ export default function SalesPage({ rows }) {
                         />
                       )}
                     </td>
+                    {groupField !== 'saleType' && (
+                      <td className="py-2 pr-3 text-center">
+                        <SaleTypeBar breakdown={g.saleTypeBreakdown} totalRevenue={g.revenue} />
+                      </td>
+                    )}
                     <td className={`py-2 pr-3 text-right font-semibold ${liqNeg ? 'text-red-600' : 'text-emerald-700'}`}>
                       {BRLFULL(g.profitLiquido)}
                     </td>
@@ -460,6 +501,7 @@ export default function SalesPage({ rows }) {
                     <td className="pt-2 pr-3 text-right text-xs">{BRLFULL(totRevenue)}</td>
                     <td className="pt-2 pr-3 text-right text-xs">{totPax.toLocaleString('pt-BR')}</td>
                     <td className="pt-2 pr-3" />{/* Composição — sem total */}
+                    {groupField !== 'saleType' && <td className="pt-2 pr-3" />}{/* Tipo — sem total */}
                     <td className={`pt-2 pr-3 text-right text-xs ${totLiquido < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
                       {BRLFULL(totLiquido)}
                     </td>
