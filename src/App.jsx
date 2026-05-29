@@ -56,8 +56,12 @@ function parseApiError(msg) {
   if (lower.includes('404')) {
     return { type: 'notfound', message: 'Endpoint da API não encontrado (404).', hint: 'Verifique a configuração do gateway ou proxy.' };
   }
-  if (lower.includes('401') || lower.includes('403')) {
-    return { type: 'auth', message: 'Sem permissão de acesso (autenticação expirada).', hint: 'Recarregue a página para renovar a sessão.' };
+  if (lower.includes('401') || lower.includes('403') || lower.includes('unauthorized') || lower.includes('sem permiss')) {
+    return {
+      type: 'auth',
+      message: 'Sem permissão de acesso à API.',
+      hint: 'Se o erro ocorreu ao trocar o perfil (Emissivo/Receptivo), as credenciais configuradas podem não ter acesso a esse perfil. Verifique as permissões do usuário no ONASYS.',
+    };
   }
   const clean = msg.length > 250 ? msg.substring(0, 250) + '…' : msg;
   return { type: 'generic', message: clean, hint: null };
