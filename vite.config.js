@@ -153,17 +153,16 @@ function buildOnasysGatewayPlugin(env) {
     if (query.qualPeriodo) noDateQuery.set('qualPeriodo', query.qualPeriodo);
     if (query.nSistema) noDateQuery.set('nSistema', query.nSistema);
 
-    // A API ONASYS interpreta o segmento qualPeriodo no path assim:
-    //   /1/ → filtra por ddatain  (data de serviço / check-in)
-    //   /2/ → filtra por ddataemissao (data de emissão)
-    // Por isso SEMPRE usamos '1' no path quando queremos filtro por ddatain (Realizado),
-    // e não usamos o path para Emitido (filtramos ddataemissao no client-side).
+    // Mapeamento qualPeriodo (frontend) → estratégia de endpoint:
+    //   0 = Emitido  → API sem datas no path; client-side filtra por ddataemissao
+    //   1 = Realizado → API com /1/ no path; server filtra por ddatain
+    // O valor 2 não é usado nesse escopo.
     const pathByDataIn = {
       endpoint: [
         baseEndpoint,
         query.periodoInicial,
         query.periodoFinal,
-        '1',              // /1/ → API filtra por ddatain
+        '1',              // /1/ no path da API = filtra por ddatain
         query.nSistema,
       ].join('/'),
       serverFiltersDates: true,
@@ -176,9 +175,9 @@ function buildOnasysGatewayPlugin(env) {
     };
     const noParams = { endpoint: baseEndpoint, serverFiltersDates: false };
 
-    // qualPeriodo='2' → Realizado: path com /1/ filtra por ddatain — correto
-    // qualPeriodo='1' → Emitido: sem datas + filtro client-side por ddataemissao
-    if (query.qualPeriodo === '2') {
+    // qualPeriodo='1' (Realizado) → usa path com datas para filtro server-side por ddatain
+    // qualPeriodo='0' (Emitido)   → sem datas no path; filtro client-side por ddataemissao
+    if (query.qualPeriodo === '1') {
       return [pathByDataIn, noDateQueryParams, noParams];
     }
     return [noDateQueryParams, noParams, pathByDataIn];

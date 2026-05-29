@@ -166,8 +166,8 @@ export default function FlowApp() {
 
   const todayDay = (now.getFullYear() === year && now.getMonth() === month) ? now.getDate() : null;
 
-  const { rows: allRows, loading, error } = useDashboardData({ startDate, endDate, qualPeriodo: 2, nSistema });
-  const { rows: prevAllRows } = useDashboardData({ startDate: prevMonthStartEnd.startDate, endDate: prevMonthStartEnd.endDate, qualPeriodo: 2, nSistema });
+  const { rows: allRows, loading, error } = useDashboardData({ startDate, endDate, qualPeriodo: 1, nSistema });
+  const { rows: prevAllRows } = useDashboardData({ startDate: prevMonthStartEnd.startDate, endDate: prevMonthStartEnd.endDate, qualPeriodo: 1, nSistema });
 
   useEffect(() => { setSelectedDay(null); setDetailSearch(''); }, [startDate, endDate, nSistema]);
   useEffect(() => { setDetailPage(0); }, [selectedDay, viewMode, detailSearch, selectedSegments]);

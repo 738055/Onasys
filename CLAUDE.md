@@ -260,13 +260,20 @@ Usado exclusivamente pelo `ScaleAuditModal`.
 GET /Lancamentos/VendasRentabilidadeItens/{inicio}/{fim}/{qualPeriodo}/{nSistema}
 ```
 
-- `qualPeriodo=1` no path → API filtra por `ddataemissao` (Emitido) — filtro client-side se `serverFiltersDates=false`
-- `qualPeriodo=2` no path → API filtra por `ddatain` (Realizado) — gateway usa path `/1/` para filtro server-side
-- Gateway em `vite.config.js` lida com OAuth2, retry interno/externo e cache de token
+### Mapeamento qualPeriodo (frontend → API)
 
-### FlowApp (`qualPeriodo=2`)
+| Valor | Nome | Filtra por | Estratégia |
+|-------|------|-----------|-----------|
+| `0` | Emitido | `ddataemissao` | Sem datas no path da API; filtro client-side no hook |
+| `1` | Realizado | `ddatain` | Path `/inicio/fim/1/nSistema` na API; server-side filter |
+| `2` | — | não usado | fora do escopo desse sistema |
 
-O FlowApp passa `qualPeriodo=2` → gateway tenta path com `/1/` (filtra por `ddatain` no servidor). Se `serverFiltersDates=false`, o hook filtra client-side por `ddatain`. Correto para "Pax por Data de Serviço".
+- Gateway em `vite.config.js` recebe o `qualPeriodo` do frontend e escolhe a estratégia de endpoint
+- Se `serverFiltersDates=false` na resposta, o hook aplica filtro client-side pelo campo correto
+
+### FlowApp (`qualPeriodo=1`)
+
+O FlowApp passa `qualPeriodo=1` (Realizado) → gateway usa path com datas → API filtra por `ddatain`. Correto para "Pax por Data de Serviço".
 
 ---
 

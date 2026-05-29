@@ -68,13 +68,13 @@ export default function App() {
   const [nSistema,    setNSistema]    = useState(1);   // Receptivo por padrão
   const [startDate,   setStartDate]   = useState(today());
   const [endDate,     setEndDate]     = useState(today());
-  const [qualPeriodo, setQualPeriodo] = useState(2);   // Realizado por padrão
+  const [qualPeriodo, setQualPeriodo] = useState(1);   // Realizado por padrão
   const [activeTab,   setActiveTab]   = useState('executive');
 
   // ── Draft states (editáveis sem disparar fetch) ───────────────────────────
   const [draftStart,       setDraftStart]       = useState(today());
   const [draftEnd,         setDraftEnd]         = useState(today());
-  const [draftQualPeriodo, setDraftQualPeriodo] = useState(2);
+  const [draftQualPeriodo, setDraftQualPeriodo] = useState(1);
   const [draftNSistema,    setDraftNSistema]    = useState(1);
 
   // Separado para estilizar só os inputs de data com amber
@@ -157,7 +157,7 @@ export default function App() {
             <p className="text-xs text-slate-400 mt-0.5">
               ONASYS — Rentabilidade &middot;{' '}
               <span className="font-medium text-indigo-500">
-                {qualPeriodo === 1 ? 'Emitido' : 'Realizado'}
+                {qualPeriodo === 0 ? 'Emitido' : 'Realizado'}
               </span>{' '}
               {startDate && endDate && (
                 <>
@@ -265,7 +265,7 @@ export default function App() {
           {/* ── Período (Emitido / Realizado) — draft, aplica junto com datas ── */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-500">Período:</span>
-            {[{ label: 'Emitido', value: 1 }, { label: 'Realizado', value: 2 }].map(p => {
+            {[{ label: 'Emitido', value: 0 }, { label: 'Realizado', value: 1 }].map(p => {
               const isDraft   = p.value === draftQualPeriodo;
               const isPending = isDraft && hasPendingPeriod;
               return (

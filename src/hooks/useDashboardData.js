@@ -63,14 +63,14 @@ export function useDashboardData({ startDate, endDate, qualPeriodo, nSistema }) 
           const end   = new Date(`${endDate}T23:59:59`);
           rawRows = rawRows.filter(r => {
             let d;
-            if (qualPeriodo === 2) {
-              // Realizado: ddatain em formato DD/MM/YYYY
+            if (qualPeriodo === 1) {
+              // Realizado (1): filtra por ddatain (data do serviço) — formato BR DD/MM/YYYY
               if (!r.ddatain) return false;
               const parts = String(r.ddatain).split('/');
               if (parts.length !== 3) return false;
               d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T00:00:00`);
             } else {
-              // Emitido: ddataemissao em formato ISO
+              // Emitido (0): filtra por ddataemissao (data de emissão) — formato ISO
               if (!r.ddataemissao) return false;
               d = new Date(r.ddataemissao);
             }

@@ -43,7 +43,7 @@ const PRESETS = [
   },
 ];
 
-const PERIOD_OPTS  = [{ label: 'Emitido', value: 1 }, { label: 'Realizado', value: 2 }];
+const PERIOD_OPTS  = [{ label: 'Emitido', value: 0 }, { label: 'Realizado', value: 1 }];
 const PROFILE_OPTS = [{ label: 'Emissivo', value: 0 }, { label: 'Receptivo', value: 1 }];
 
 const DIM_OPTS = [
@@ -199,7 +199,7 @@ function PeriodConfig({
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────
-export default function ComparativosPage({ qualPeriodo = 2, nSistema = 1 }) {
+export default function ComparativosPage({ qualPeriodo = 1, nSistema = 1 }) {
   const segChartRef = useRef(null);
 
   // ── Período A — estados aplicados (disparam fetch) ──
