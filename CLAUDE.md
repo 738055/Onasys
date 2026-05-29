@@ -375,7 +375,7 @@ Logs com prefixo `[BI]` ativos apenas em `import.meta.env.DEV` (desaparecem no b
 | I | Ingresso | verde (`#10b981`) |
 | TO | Transfer Out | azul (`#3b82f6`) |
 | TI | Transfer In | índigo (`#6366f1`) |
-| R | Receptivo | âmbar (`#f59e0b`) |
+| R | TRF Passeios | âmbar (`#f59e0b`) |
 | A | Aéreo | violeta (`#8b5cf6`) |
 | H | Hotel | laranja (`#f97316`) |
 | S | Serviços | teal (`#14b8a6`) |

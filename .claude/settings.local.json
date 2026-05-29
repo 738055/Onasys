@@ -6,7 +6,10 @@
       "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:5173/api/onasys/rentabilidade?periodoInicial=2026-05-01&periodoFinal=2026-05-21&qualPeriodo=1&nSistema=0\" -UseBasicParsing -TimeoutSec 15; $r.Content.Substring\\(0, [Math]::Min\\(500, $r.Content.Length\\)\\) } catch { $_.Exception.Message })",
       "Bash(npm run *)",
       "Bash(xargs ls -la)",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(powershell -Command \"\\(Get-Content 'vendasRentabilidade_ExcelSem \\(31\\).csv' | Measure-Object -Line\\).Lines\")",
+      "WebFetch(domain:192.168.25.240)",
+      "WebFetch(domain:localhost)"
     ]
   }
 }
