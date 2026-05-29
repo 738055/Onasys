@@ -15,6 +15,13 @@ async function parseRemoteResponse(response) {
   return contentType.includes('application/json') ? response.json() : response.text();
 }
 
+function ts() {
+  return new Date().toLocaleTimeString('pt-BR', { hour12: false });
+}
+function gLog(msg)  { console.log(`\x1b[36m[ONASYS ${ts()}]\x1b[0m ${msg}`); }
+function gWarn(msg) { console.warn(`\x1b[33m[ONASYS ${ts()}] ⚠\x1b[0m  ${msg}`); }
+function gErr(msg)  { console.error(`\x1b[31m[ONASYS ${ts()}] ✗\x1b[0m  ${msg}`); }
+
 function buildOnasysGatewayPlugin(env) {
   const tokenUrl = trimSlash(env.ONASYS_TOKEN_URL || DEFAULT_TOKEN_URL);
   const internalBase = trimSlash(env.ONASYS_INTERNAL_BASE || DEFAULT_INTERNAL_BASE);
@@ -82,11 +89,14 @@ function buildOnasysGatewayPlugin(env) {
         typeof body === 'string'
           ? body
           : body?.message || body?.erro || body?.error || response.statusText;
-      throw new Error(`Token ${response.status}: ${detail}`);
+      const err = `Token ${response.status}: ${detail}`;
+      gErr(`Falha ao obter token OAuth2 — ${err}`);
+      throw new Error(err);
     }
 
     const accessToken = body?.access_token || body?.token || body?.accessToken;
     if (!accessToken) {
+      gErr('Resposta de token sem access_token — verifique ONASYS_USERNAME / ONASYS_PASSWORD / ONASYS_CLIENT_ID no .env');
       throw new Error('Resposta de token sem access_token.');
     }
 
@@ -102,6 +112,7 @@ function buildOnasysGatewayPlugin(env) {
       expiresIn,
     };
 
+    gLog(`🔑 Token renovado — expira em ${expiresIn}s (refresh automático em ${Math.round(safeTtl / 1000)}s)`);
     return tokenCache;
   }
 
@@ -110,6 +121,8 @@ function buildOnasysGatewayPlugin(env) {
     if (!force && tokenCache.accessToken && now < tokenCache.expiresAt && now - tokenCache.refreshedAt < refreshMs) {
       return tokenCache;
     }
+
+    if (force) gLog('🔄 Forçando renovação de token (401/403 recebido da API)...');
 
     if (!refreshPromise) {
       refreshPromise = requestNewToken().finally(() => {
@@ -175,8 +188,10 @@ function buildOnasysGatewayPlugin(env) {
     const tokenInfo = await ensureToken(false);
     const candidates = [preferredBase, preferredBase === internalBase ? externalBase : internalBase].filter(Boolean);
     const errors = [];
+    const label = `${query.periodoInicial}→${query.periodoFinal} qP=${query.qualPeriodo} nS=${query.nSistema}`;
 
     for (const baseUrl of candidates) {
+      const source = baseUrl === internalBase ? 'internal' : 'external';
       const attempts = buildRentabilidadeAttempts(baseUrl, query);
 
       for (const strategy of attempts) {
@@ -184,6 +199,7 @@ function buildOnasysGatewayPlugin(env) {
           let attempt = await fetchRentabilidadeFromEndpoint(strategy.endpoint, tokenInfo.accessToken);
 
           if (attempt.response.status === 401 || attempt.response.status === 403) {
+            gWarn(`${attempt.response.status} recebido de ${source} — renovando token e tentando novamente...`);
             const freshToken = await ensureToken(true);
             attempt = await fetchRentabilidadeFromEndpoint(strategy.endpoint, freshToken.accessToken);
           }
@@ -196,19 +212,23 @@ function buildOnasysGatewayPlugin(env) {
             throw new Error(`${attempt.response.status}: ${detail}`);
           }
 
+          const rowCount = Array.isArray(attempt.body) ? attempt.body.length : (Array.isArray(attempt.body?.rows) ? attempt.body.rows.length : '?');
           preferredBase = baseUrl;
+          gLog(`✓ ${rowCount} registros | ${label} | source=${source} | serverFiltersDates=${strategy.serverFiltersDates}`);
           return {
-            source: baseUrl === internalBase ? 'internal' : 'external',
+            source,
             endpoint: attempt.endpoint,
             rows: attempt.body,
             serverFiltersDates: strategy.serverFiltersDates,
           };
         } catch (error) {
+          gWarn(`Tentativa falhou [${source}]: ${error.message}`);
           errors.push(`${strategy.endpoint} -> ${error.message}`);
         }
       }
     }
 
+    gErr(`Todas as tentativas falharam para ${label}:\n  ${errors.join('\n  ')}`);
     throw new Error(errors.join(' | '));
   }
 
@@ -257,15 +277,18 @@ function buildOnasysGatewayPlugin(env) {
         };
 
         if (!query.periodoInicial || !query.periodoFinal) {
+          gWarn('Requisição sem periodoInicial/periodoFinal — rejeitada (400)');
           sendJson(res, 400, {
             error: 'periodoInicial e periodoFinal sao obrigatorios.',
           });
           return;
         }
 
+        gLog(`→ /rentabilidade ${query.periodoInicial}→${query.periodoFinal} | qualPeriodo=${query.qualPeriodo} | nSistema=${query.nSistema}`);
         const result = await requestRentabilidade(query);
         sendJson(res, 200, result);
       } catch (error) {
+        gErr(`Erro na requisição de rentabilidade: ${error.message}`);
         sendJson(res, 502, {
           error: error.message,
           activeBase: preferredBase,
@@ -276,8 +299,8 @@ function buildOnasysGatewayPlugin(env) {
 
   if (authConfigured()) {
     const timer = setInterval(() => {
-      ensureToken(false).catch(() => {
-        // Keep server alive; errors are surfaced via status endpoint.
+      ensureToken(false).catch(err => {
+        gErr(`Falha no refresh periódico de token: ${err.message}`);
       });
     }, refreshMs);
     if (typeof timer.unref === 'function') timer.unref();
@@ -286,6 +309,14 @@ function buildOnasysGatewayPlugin(env) {
   return {
     name: 'onasys-gateway',
     configureServer(server) {
+      if (!authConfigured()) {
+        gWarn('Credenciais ONASYS não configuradas no .env — requisições à API irão falhar.');
+        gWarn('Variáveis necessárias: ONASYS_USERNAME, ONASYS_PASSWORD, ONASYS_CLIENT_ID');
+        gWarn('Diagnóstico disponível em: http://localhost:5173/api/onasys/status');
+      } else {
+        gLog(`Gateway ONASYS iniciado | interno: ${internalBase} | externo: ${externalBase}`);
+        gLog(`Diagnóstico: http://localhost:5173/api/onasys/status`);
+      }
       attachMiddlewares(server.middlewares);
     },
     configurePreviewServer(server) {

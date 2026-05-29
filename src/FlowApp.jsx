@@ -189,12 +189,22 @@ export default function FlowApp() {
   // ── Segment filter ──────────────────────────────────────────
   const uniqueSegments = useMemo(() => [...new Set(allRows.map(r => r.segment).filter(Boolean))].sort(), [allRows]);
 
+  // Reembolso aprovado (status=28) = pax não vai — excluído do fluxo operacional.
+  // O item original correspondente já tem num_pax=0, então não há dupla contagem.
   const filteredRows = useMemo(() =>
-    selectedSegments.size === 0 ? allRows : allRows.filter(r => selectedSegments.has(r.segment)),
+    allRows.filter(r => {
+      if (r.idStatusServico === 28) return false;
+      if (selectedSegments.size > 0 && !selectedSegments.has(r.segment)) return false;
+      return true;
+    }),
   [allRows, selectedSegments]);
 
   const prevFilteredRows = useMemo(() =>
-    selectedSegments.size === 0 ? prevAllRows : prevAllRows.filter(r => selectedSegments.has(r.segment)),
+    prevAllRows.filter(r => {
+      if (r.idStatusServico === 28) return false;
+      if (selectedSegments.size > 0 && !selectedSegments.has(r.segment)) return false;
+      return true;
+    }),
   [prevAllRows, selectedSegments]);
 
   // ── Daily pax ───────────────────────────────────────────────

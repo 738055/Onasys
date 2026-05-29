@@ -36,6 +36,11 @@ export function useDashboardData({ startDate, endDate, qualPeriodo, nSistema }) 
       ? `/api/onasys/rentabilidade?${params}`
       : `${apiPrefix}/proxy/RentabilidadeGateway.ashx?${params}`;
 
+    const isDev = import.meta.env.DEV;
+    if (isDev) {
+      console.log(`[BI] fetch ${startDate} → ${endDate} | qualPeriodo=${qualPeriodo} | nSistema=${nSistema}`);
+    }
+
     fetch(endpoint, { signal: controller.signal })
       .then(async r => {
         if (!r.ok) {
@@ -47,6 +52,11 @@ export function useDashboardData({ startDate, endDate, qualPeriodo, nSistema }) 
       })
       .then(data => {
         let rawRows = Array.isArray(data) ? data : (Array.isArray(data.rows) ? data.rows : []);
+        const beforeFilter = rawRows.length;
+
+        if (isDev) {
+          console.log(`[BI] resposta: ${beforeFilter} registros brutos | source=${data.source || 'prod'} | serverFiltersDates=${data.serverFiltersDates ?? 'n/a'}`);
+        }
 
         if (data.serverFiltersDates === false && startDate && endDate) {
           const start = new Date(`${startDate}T00:00:00`);
@@ -66,12 +76,16 @@ export function useDashboardData({ startDate, endDate, qualPeriodo, nSistema }) 
             }
             return d >= start && d <= end;
           });
+          if (isDev && rawRows.length !== beforeFilter) {
+            console.log(`[BI] filtro client-side: ${beforeFilter} → ${rawRows.length} registros`);
+          }
         }
 
         setState({ rows: normalizeRows(rawRows), loading: false, error: null });
       })
       .catch(err => {
         if (err.name === 'AbortError') return;
+        if (isDev) console.error(`[BI] ERRO no fetch: ${err.message}`);
         setState({ rows: [], loading: false, error: err.message });
       });
 

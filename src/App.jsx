@@ -122,6 +122,8 @@ export default function App() {
     return true;
   }), [allRows, filialFilter, channelFilter, clientTypeFilter, vendorFilter, saleTypeFilter]);
 
+  const reembolsoCount = useMemo(() => rows.filter(r => r.idStatusServico === 28).length, [rows]);
+
   const filterOptions = useMemo(() => ({
     filiais:     [...new Set(allRows.map(r => r.filial).filter(Boolean))].sort(),
     channels:    [...new Set(allRows.map(r => r.channel).filter(Boolean))].sort(),
@@ -291,6 +293,11 @@ export default function App() {
               {cancelledRows.length > 0 && (
                 <span className="flex items-center gap-1 text-red-400 font-medium">
                   · {cancelledRows.length.toLocaleString('pt-BR')} cancelado{cancelledRows.length !== 1 ? 's' : ''} excl.
+                </span>
+              )}
+              {reembolsoCount > 0 && (
+                <span className="flex items-center gap-1 text-fuchsia-500 font-medium">
+                  · {reembolsoCount.toLocaleString('pt-BR')} reembolso{reembolsoCount !== 1 ? 's' : ''} (R$0 no fat.)
                 </span>
               )}
             </span>

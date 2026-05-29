@@ -27,6 +27,20 @@ export function normalizeRow(raw) {
   const rawProfit       = parseNum(raw.total_resultadoab);
   const rawProfitLiq    = parseNum(raw.total_liquido);
 
+  if (import.meta.env.DEV && isRefund && rawProfit > 0) {
+    const key = `${raw.venda}-${raw.Voucher}`;
+    if (!_refundWarnSet.has(key)) {
+      _refundWarnSet.add(key);
+      console.warn(
+        `[BI] Reembolso com lucro positivo (erro de lançamento): `+
+        `venda=${raw.venda} | voucher=${raw.Voucher} | `+
+        `fornecedor="${raw.nomefornecedor}" | `+
+        `revenue=R$${rawRevenue.toFixed(2)} | profit=R$${rawProfit.toFixed(2)} `+
+        `→ excluído do KPI`
+      );
+    }
+  }
+
   return {
     id:            raw.venda,
     emissionDate:  parseISODate(raw.ddataemissao),
@@ -100,7 +114,25 @@ export function normalizeRow(raw) {
   };
 }
 
+// Set para evitar logs duplicados de qualidade de dados no DEV (limpa a cada fetch)
+let _refundWarnSet = new Set();
+
 export function normalizeRows(rawArray) {
   if (!Array.isArray(rawArray)) return [];
-  return rawArray.map(normalizeRow);
+  _refundWarnSet = new Set();
+  const result = rawArray.map(normalizeRow);
+
+  if (import.meta.env.DEV) {
+    const refunds    = result.filter(r => r.idStatusServico === 28);
+    const errRefunds = refunds.filter(r => (r.profitRaw || 0) > 0);
+    const cancelled  = result.filter(r => r.idStatusServico === 4);
+    console.log(
+      `[BI] normalize: ${result.length} itens | `+
+      `${cancelled.length} cancelados | `+
+      `${refunds.length} reembolsos`+
+      (errRefunds.length ? ` ⚠ (${errRefunds.length} com erro de lançamento — excluídos do KPI)` : '')
+    );
+  }
+
+  return result;
 }

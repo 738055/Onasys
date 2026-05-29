@@ -38,6 +38,11 @@ export function useYearData({ year, qualPeriodo, nSistema }) {
       ? `/api/onasys/rentabilidade?${params}`
       : `${apiPrefix}/proxy/RentabilidadeGateway.ashx?${params}`;
 
+    const isDev = import.meta.env.DEV;
+    if (isDev) {
+      console.log(`[BI] yearData fetch ${year} | qualPeriodo=${qualPeriodo} | nSistema=${nSistema}`);
+    }
+
     fetch(endpoint, { signal: controller.signal })
       .then(async r => {
         if (!r.ok) {
@@ -49,6 +54,10 @@ export function useYearData({ year, qualPeriodo, nSistema }) {
       })
       .then(data => {
         let rawRows = Array.isArray(data) ? data : (Array.isArray(data.rows) ? data.rows : []);
+
+        if (isDev) {
+          console.log(`[BI] yearData resposta: ${rawRows.length} registros | year=${year} | source=${data.source || 'prod'}`);
+        }
 
         if (data.serverFiltersDates === false) {
           const start = new Date(`${startDate}T00:00:00`);
@@ -72,6 +81,7 @@ export function useYearData({ year, qualPeriodo, nSistema }) {
       })
       .catch(err => {
         if (err.name === 'AbortError') return;
+        if (isDev) console.error(`[BI] yearData ERRO: ${err.message}`);
         setState({ rows: [], loading: false, error: err.message });
       });
 

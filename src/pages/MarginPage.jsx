@@ -715,6 +715,15 @@ export default function MarginPage({ rows }) {
                               ) : (
                                 <span className="text-slate-300">—</span>
                               )}
+                              {/* Badge de reembolso — custo real de devolução (taxa/comissão paga) */}
+                              {r.idStatusServico === 28 && (
+                                <span
+                                  className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-fuchsia-100 text-fuchsia-700 whitespace-nowrap"
+                                  title={`Custo de reembolso aprovado — taxa ou comissão paga sem receita correspondente. Voucher original: ${r.refundOriginalVoucher > 0 ? '#' + r.refundOriginalVoucher : 'não vinculado'}`}
+                                >
+                                  reembolso
+                                </span>
+                              )}
                               {/* Botão de auditoria — aparece quando o item tem idEscala vinculado */}
                               {r.idEscala > 0 && (
                                 <button
