@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 const DEFAULT_TOKEN_URL = 'http://192.168.25.240/apiwrb/security/token';
 const DEFAULT_INTERNAL_BASE = 'http://192.168.25.240/apiwrb';
 const DEFAULT_EXTERNAL_BASE = 'http://api.wrb.onasys.com.br';
+const DEFAULT_FINANCE_EXTERNAL_BASE = 'http://api.frt.onasys.com.br';
 const DEFAULT_REFRESH_MS = 2 * 60 * 1000;
 
 function trimSlash(value = '') {
@@ -26,6 +27,7 @@ function buildOnasysGatewayPlugin(env) {
   const tokenUrl = trimSlash(env.ONASYS_TOKEN_URL || DEFAULT_TOKEN_URL);
   const internalBase = trimSlash(env.ONASYS_INTERNAL_BASE || DEFAULT_INTERNAL_BASE);
   const externalBase = trimSlash(env.ONASYS_EXTERNAL_BASE || DEFAULT_EXTERNAL_BASE);
+  const financeExternalBase = trimSlash(env.ONASYS_FINANCE_EXTERNAL_BASE || DEFAULT_FINANCE_EXTERNAL_BASE);
   const grantType = (env.ONASYS_GRANT_TYPE || 'password').trim();
   const username = (env.ONASYS_USERNAME || '').trim();
   const password = env.ONASYS_PASSWORD || '';
@@ -231,6 +233,73 @@ function buildOnasysGatewayPlugin(env) {
     throw new Error(errors.join(' | '));
   }
 
+  // ─── Endpoints contábeis ──────────────────────────────────────────────────
+
+  const CONTABIL_PATH_MAP = {
+    resultado:  (ini, fim)      => `Lancamentos/LancamentosContabeisResultado/${ini}/${fim}`,
+    baixadas:   (ini, fim)      => `Lancamentos/contasBaixadas/${ini}/${fim}`,
+    lancamentos:(ini, fim)      => `Lancamentos/LancamentosContabeis/${ini}/${fim}`,
+    todos:      (ini, fim, tipo)=> `Lancamentos/LancamentosContabeisTodos/${ini}/${fim}/${tipo || 'R'}`,
+    abertas:    ()              => `Lancamentos/contasAbertas`,
+  };
+
+  async function fetchContabilFromEndpoint(endpoint, token, jsonBody = null) {
+    const headers = { Accept: 'application/json', Authorization: `Bearer ${token}` };
+    if (jsonBody) headers['Content-Type'] = 'application/json';
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers,
+      ...(jsonBody ? { body: JSON.stringify(jsonBody) } : {}),
+    });
+    const body = await parseRemoteResponse(response);
+    return { response, body, endpoint };
+  }
+
+  async function requestContabil(query) {
+    const { recurso, periodoInicial, periodoFinal, tipo } = query;
+
+    const pathFn = CONTABIL_PATH_MAP[recurso];
+    if (!pathFn) throw new Error(`recurso desconhecido: ${recurso}`);
+
+    const tokenInfo = await ensureToken(false);
+    const label = `${periodoInicial}→${periodoFinal} recurso=${recurso}`;
+    gLog(`→ /contabil ${label}`);
+
+    // Estratégia 1: base interna com path params
+    const internalPath = `${internalBase}/${pathFn(periodoInicial, periodoFinal, tipo)}`;
+    // Estratégia 2: base externa financeira com JSON body
+    const externalPath = `${financeExternalBase}/Lancamentos/${recurso === 'resultado' ? 'LancamentosContabeisResultado' : recurso === 'baixadas' ? 'contasBaixadas' : recurso === 'lancamentos' ? 'LancamentosContabeis' : recurso === 'todos' ? `LancamentosContabeisTodos` : 'contasAbertas'}`;
+    const externalBody = { periodoInicial, periodoFinal, ...(recurso === 'todos' ? { tipo: tipo || 'R' } : {}) };
+
+    const attempts = [
+      { endpoint: internalPath,  body: null,         source: 'internal' },
+      { endpoint: externalPath,  body: externalBody, source: 'external' },
+    ];
+
+    const errors = [];
+    for (const attempt of attempts) {
+      try {
+        let res = await fetchContabilFromEndpoint(attempt.endpoint, tokenInfo.accessToken, attempt.body);
+        if (res.response.status === 401 || res.response.status === 403) {
+          const fresh = await ensureToken(true);
+          res = await fetchContabilFromEndpoint(attempt.endpoint, fresh.accessToken, attempt.body);
+        }
+        if (!res.response.ok) {
+          const detail = typeof res.body === 'string' ? res.body : res.body?.message || res.body?.error || res.response.statusText;
+          throw new Error(`${res.response.status}: ${detail}`);
+        }
+        const rowCount = Array.isArray(res.body) ? res.body.length : '?';
+        gLog(`✓ ${rowCount} registros contábeis | ${label} | source=${attempt.source}`);
+        return { source: attempt.source, rows: res.body };
+      } catch (err) {
+        gWarn(`Contábil tentativa falhou [${attempt.source}]: ${err.message}`);
+        errors.push(`${attempt.endpoint} → ${err.message}`);
+      }
+    }
+    gErr(`Todas tentativas contábeis falharam: ${label}`);
+    throw new Error(errors.join(' | '));
+  }
+
   function sendJson(res, statusCode, payload) {
     res.statusCode = statusCode;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -262,6 +331,39 @@ function buildOnasysGatewayPlugin(env) {
           mode: preferredBase === internalBase ? 'internal' : 'external',
           tokenEndpoint: tokenUrl,
         });
+      }
+    });
+
+    middlewares.use('/api/onasys/contabil', async (req, res) => {
+      try {
+        const url = new URL(req.originalUrl || req.url, 'http://localhost');
+        const recurso        = url.searchParams.get('recurso') || '';
+        const periodoInicial = url.searchParams.get('periodoInicial') || '';
+        const periodoFinal   = url.searchParams.get('periodoFinal')   || '';
+        const tipo           = url.searchParams.get('tipo') || 'R';
+
+        if (!recurso) {
+          sendJson(res, 400, { error: 'Parâmetro "recurso" obrigatório.' });
+          return;
+        }
+        if (!periodoInicial || !periodoFinal) {
+          sendJson(res, 400, { error: 'periodoInicial e periodoFinal são obrigatórios.' });
+          return;
+        }
+
+        // Valida limite de 1 mês
+        const msDay = 1000 * 60 * 60 * 24;
+        const diffDays = (new Date(periodoFinal) - new Date(periodoInicial)) / msDay;
+        if (diffDays > 31) {
+          sendJson(res, 400, { error: 'Período máximo de 1 mês para endpoints contábeis.' });
+          return;
+        }
+
+        const result = await requestContabil({ recurso, periodoInicial, periodoFinal, tipo });
+        sendJson(res, 200, result);
+      } catch (error) {
+        gErr(`Erro na requisição contábil: ${error.message}`);
+        sendJson(res, 502, { error: error.message });
       }
     });
 
@@ -341,8 +443,9 @@ export default defineConfig(({ mode }) => {
     build: {
       rollupOptions: {
         input: {
-          main: 'index.html',
-          flow: 'flow.html',
+          main:    'index.html',
+          flow:    'flow.html',
+          finance: 'finance.html',
         },
       },
     },

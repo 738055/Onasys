@@ -9,7 +9,11 @@
       "Bash(npx vite *)",
       "Bash(powershell -Command \"\\(Get-Content 'vendasRentabilidade_ExcelSem \\(31\\).csv' | Measure-Object -Line\\).Lines\")",
       "WebFetch(domain:192.168.25.240)",
-      "WebFetch(domain:localhost)"
+      "WebFetch(domain:localhost)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Projetos\\\\Dashboard onasys\" -Recurse -Depth 3)",
+      "Bash(Select-Object FullName)",
+      "Bash(ConvertTo-Csv -NoTypeInformation)",
+      "Bash(Out-String)"
     ]
   }
 }
