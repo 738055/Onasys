@@ -13,7 +13,9 @@
       "Bash(Get-ChildItem -Path \"C:\\\\Projetos\\\\Dashboard onasys\" -Recurse -Depth 3)",
       "Bash(Select-Object FullName)",
       "Bash(ConvertTo-Csv -NoTypeInformation)",
-      "Bash(Out-String)"
+      "Bash(Out-String)",
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)"
     ]
   }
 }

@@ -7,18 +7,24 @@ import { Search } from 'lucide-react';
 import { groupByAccount, buildHeatMap, buildAccountTrend, calcDREKPIs, groupByUnit } from '../../utils/financeAggregations';
 import { BRLFULL, BRLk, PCTFMT, FINANCE_COLORS, fmtMonthKey, accountColor } from '../../utils/financeFormat';
 import { ExportButton } from '../../components/ExportButton';
-import { InfoTooltip }  from '../../components/InfoTooltip';
+import { InfoTooltip, TooltipFormula, TooltipTitle } from '../../components/InfoTooltip';
 
 export default function ExpensesPage({ rows, loading }) {
   const [search, setSearch] = useState('');
   const [sortCol, setSortCol] = useState('value');
   const [sortDir, setSortDir] = useState('desc');
 
-  const kpi      = useMemo(() => calcDREKPIs(rows), [rows]);
-  const despesas = useMemo(() => groupByAccount(rows, 'despesa'), [rows]);
-  const heatMap  = useMemo(() => buildHeatMap(rows, 'despesa', 10), [rows]);
-  const trend    = useMemo(() => buildAccountTrend(rows, 'despesa', 6), [rows]);
+  const kpi = useMemo(() => calcDREKPIs(rows), [rows]);
+
+  // CSV (DESPESAS COM VENDAS) é custo direto — excluído da análise de overhead
+  const overheadRows = useMemo(() => rows.filter(r => r.kind === 'despesa' && r.subkind !== 'csv'), [rows]);
+
+  const despesas = useMemo(() => groupByAccount(overheadRows, 'despesa'), [overheadRows]);
+  const heatMap  = useMemo(() => buildHeatMap(overheadRows, 'despesa', 10), [overheadRows]);
+  const trend    = useMemo(() => buildAccountTrend(overheadRows, 'despesa', 6), [overheadRows]);
   const byUnit   = useMemo(() => groupByUnit(rows), [rows]);
+
+  const overheadTotal = useMemo(() => overheadRows.reduce((s, r) => s + r.signed, 0), [overheadRows]);
 
   const filtered = useMemo(() => {
     let list = despesas;
@@ -48,7 +54,7 @@ export default function ExpensesPage({ rows, loading }) {
         { key: 'count',   label: 'Lançamentos',  type: 'number'   },
       ],
       rows: filtered.map(d => ({
-        ...d, pct: kpi.despesa > 0 ? d.value / kpi.despesa * 100 : 0,
+        ...d, pct: kpi.receita > 0 ? d.value / kpi.receita * 100 : 0,
       })),
     },
   ], [filtered, kpi]);
@@ -75,11 +81,30 @@ export default function ExpensesPage({ rows, loading }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-base font-bold text-slate-800 flex items-center gap-1.5">
-          Análise de Despesas
-          <InfoTooltip text="Todos os lançamentos de despesa (contas 4xxx) no período selecionado. Inclui comissões, taxas, repasses e outras saídas operacionais." />
+          Análise de Overhead
+          <InfoTooltip>
+            <TooltipTitle>Overhead — Despesas Gerenciais</TooltipTitle>
+            <TooltipFormula>Despesas 4xxx exceto DESPESAS COM VENDAS (CSV)</TooltipFormula>
+            <span className="text-slate-300">Pessoal, encargos, despesas financeiras e outras. O Custo dos Serviços (repasses a fornecedores) é tratado separadamente como CSV na Visão Geral. Os percentuais aqui são sempre em relação à Receita Bruta.</span>
+          </InfoTooltip>
         </h1>
         <ExportButton title="Despesas Financeiro" slug="financeiro-despesas" sections={exportSections} />
       </div>
+
+      {/* Banner CSV separado */}
+      {kpi.csv > 0 && (
+        <div className="bg-violet-50 border border-violet-200 rounded-xl p-4 flex items-center justify-between gap-4">
+          <div className="text-xs text-violet-800">
+            <span className="font-bold">Custo dos Serviços (CSV)</span>
+            {' '}excluído desta análise — contabilizado separadamente na Visão Geral.
+            <span className="ml-2 text-violet-600">{BRLFULL(kpi.csv)} · {PCTFMT(kpi.csv / kpi.receita * 100)} da receita bruta</span>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <p className="text-[10px] text-violet-400 uppercase tracking-wider">Receita Líquida</p>
+            <p className="text-sm font-bold text-violet-700 tabular-nums">{PCTFMT(kpi.margemBrutaPct)}</p>
+          </div>
+        </div>
+      )}
 
       {/* Ranking bar */}
       {barData.length > 0 && (
@@ -161,7 +186,7 @@ export default function ExpensesPage({ rows, loading }) {
       {/* Tabela detalhada */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-panel p-5">
         <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-          <h2 className="text-sm font-semibold text-slate-700">Detalhamento por Categoria</h2>
+          <h2 className="text-sm font-semibold text-slate-700">Detalhamento — Overhead por Categoria</h2>
           <div className="relative">
             <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -185,7 +210,7 @@ export default function ExpensesPage({ rows, loading }) {
                     </span>
                   </th>
                 ))}
-                <th className="pb-2 text-right font-semibold text-slate-500">% Despesas</th>
+                <th className="pb-2 text-right font-semibold text-slate-500">% Receita</th>
               </tr>
             </thead>
             <tbody>
@@ -197,17 +222,19 @@ export default function ExpensesPage({ rows, loading }) {
                   <td className="py-1.5 text-right tabular-nums text-red-600 font-semibold">{BRLFULL(d.value)}</td>
                   <td className="py-1.5 text-right tabular-nums text-slate-500">{d.count}</td>
                   <td className="py-1.5 text-right tabular-nums text-slate-500">
-                    {kpi.despesa > 0 ? PCTFMT(d.value / kpi.despesa * 100) : '—'}
+                    {kpi.receita > 0 ? PCTFMT(d.value / kpi.receita * 100) : '—'}
                   </td>
                 </tr>
               ))}
             </tbody>
             <tfoot className="border-t-2 border-slate-200">
               <tr className="font-bold text-slate-800">
-                <td className="py-2">Total</td>
-                <td className="py-2 text-right tabular-nums text-red-700">{BRLFULL(kpi.despesa)}</td>
+                <td className="py-2">Total Overhead</td>
+                <td className="py-2 text-right tabular-nums text-red-700">{BRLFULL(overheadTotal)}</td>
                 <td className="py-2 text-right tabular-nums">{filtered.reduce((s,d) => s + d.count, 0)}</td>
-                <td className="py-2 text-right tabular-nums">100,00%</td>
+                <td className="py-2 text-right tabular-nums text-slate-500">
+                  {kpi.receita > 0 ? PCTFMT(overheadTotal / kpi.receita * 100) : '—'}
+                </td>
               </tr>
             </tfoot>
           </table>

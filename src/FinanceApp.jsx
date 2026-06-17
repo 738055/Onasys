@@ -1,25 +1,24 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Loader } from './components/Loader';
 import { useFinanceSeries } from './hooks/useFinanceSeries';
-import { useFinanceData }   from './hooks/useFinanceData';
 import { ExportProvider }   from './contexts/ExportContext';
 import OverviewPage  from './pages/finance/OverviewPage';
 import DREPage       from './pages/finance/DREPage';
 import ExpensesPage  from './pages/finance/ExpensesPage';
 import RevenuePage   from './pages/finance/RevenuePage';
 import CashFlowPage  from './pages/finance/CashFlowPage';
-import PayablesPage  from './pages/finance/PayablesPage';
 import ComparePage   from './pages/finance/ComparePage';
+import ConcilPage    from './pages/finance/ConcilPage';
 import { MONTHS_SHORT } from './utils/financeFormat';
 
 const TABS = [
-  { id: 'overview',  label: 'Visão Geral'          },
-  { id: 'dre',       label: 'DRE'                   },
-  { id: 'expenses',  label: 'Despesas'              },
-  { id: 'revenue',   label: 'Receitas'              },
-  { id: 'cashflow',  label: 'Fluxo de Caixa'        },
-  { id: 'payables',  label: 'Contas Pagar/Receber'  },
-  { id: 'compare',   label: 'Comparativos'          },
+  { id: 'overview',  label: 'Visão Geral'    },
+  { id: 'dre',       label: 'DRE'            },
+  { id: 'expenses',  label: 'Despesas'       },
+  { id: 'revenue',   label: 'Receitas'       },
+  { id: 'cashflow',  label: 'Fluxo de Caixa' },
+  { id: 'concil',    label: 'Conciliação'    },
+  { id: 'compare',   label: 'Comparativos'   },
 ];
 
 function parseApiError(msg) {
@@ -86,11 +85,10 @@ export default function FinanceApp() {
     enabled: activeTab === 'cashflow',
   });
 
-  // Contas abertas — posição atual, sem filtro de data
-  const today = new Date().toISOString().slice(0, 10);
-  const { rows: abertasRows, loading: abertasLoading } = useFinanceData({
-    startDate: today, endDate: today, recurso: 'abertas',
-    enabled: activeTab === 'payables',
+  // Conciliação por produto — lazy, só quando aba ativa
+  const { rows: concilRowsRaw, loading: concilLoading, error: concilError } = useFinanceSeries({
+    year, startMonth, endMonth, recurso: 'baixadasProdutos',
+    enabled: activeTab === 'concil',
   });
 
   // ── Filtro de filial (client-side, não re-fetcha) ──────────────────────────
@@ -101,6 +99,11 @@ export default function FinanceApp() {
   const filteredCash = useMemo(() =>
     unitFilter ? cashRows.filter(r => r.unit === unitFilter) : cashRows,
   [cashRows, unitFilter]);
+
+  // Conciliação com filtro de filial aplicado (mesmo padrão do DRE e caixa)
+  const concilRows = useMemo(() =>
+    unitFilter ? concilRowsRaw.filter(r => r.unit === unitFilter) : concilRowsRaw,
+  [concilRowsRaw, unitFilter]);
 
   const units = useMemo(() => {
     const set = new Set();
@@ -119,8 +122,11 @@ export default function FinanceApp() {
     filters:      { filial: unitFilter ? [unitFilter] : [] },
   }), [year, startMonth, endMonth, unitFilter, lastDay]);
 
-  const loading = dreLoading || (activeTab === 'cashflow' && cashLoading) || (activeTab === 'payables' && abertasLoading);
-  const error   = dreError || cashError;
+  const loading = dreLoading
+    || (activeTab === 'cashflow' && cashLoading)
+    || (activeTab === 'concil'   && concilLoading);
+  const error = dreError || cashError || concilError;
+
 
   const totalMonths = endMonth - startMonth + 1;
 
@@ -208,14 +214,14 @@ export default function FinanceApp() {
             </div>
           )}
 
-          {loading && dreRows.length === 0 && cashRows.length === 0 && abertasRows.length === 0 && <Loader />}
+          {loading && dreRows.length === 0 && cashRows.length === 0 && concilRows.length === 0 && <Loader />}
 
           {activeTab === 'overview'  && <OverviewPage  rows={filteredDRE}  prevRows={prevDreRows} loading={dreLoading} year={year} startMonth={startMonth} endMonth={endMonth} />}
           {activeTab === 'dre'       && <DREPage       rows={filteredDRE}  loading={dreLoading} />}
           {activeTab === 'expenses'  && <ExpensesPage  rows={filteredDRE}  loading={dreLoading} />}
           {activeTab === 'revenue'   && <RevenuePage   rows={filteredDRE}  loading={dreLoading} />}
           {activeTab === 'cashflow'  && <CashFlowPage  rows={filteredCash} loading={cashLoading} />}
-          {activeTab === 'payables'  && <PayablesPage  rows={abertasRows}  loading={abertasLoading} />}
+          {activeTab === 'concil'    && <ConcilPage    rows={concilRows}   loading={concilLoading} />}
           {activeTab === 'compare'   && <ComparePage />}
         </main>
       </div>

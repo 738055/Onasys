@@ -17,25 +17,27 @@ export function getAccountGroupLabel(code) {
 }
 
 // Hierarquia DRE: { receitas: { groups, total }, despesas: { groups, total } }
-// group: { code, label, accounts: [{ name, value, pct, count }], subtotal }
+// Agrupa por contabilPai (campo da API) → nomeContabilPai como label.
+// Fallback: 2 dígitos de contaextendida + ACCOUNT_GROUP_LABELS quando contabilPai ausente.
 export function buildDREHierarchy(rows) {
   function buildGroups(kindRows) {
     const groups = {};
     for (const r of kindRows) {
-      const groupCode = String(r.accountCode || '').slice(0, 2);
-      if (!groups[groupCode]) groups[groupCode] = { code: groupCode, accounts: {} };
+      const groupCode  = r.contabilPai  || String(r.accountCode || '').slice(0, 2);
+      const groupLabel = r.nomeContabilPai || ACCOUNT_GROUP_LABELS[String(r.accountCode || '').slice(0, 2)] || `Grupo ${groupCode}`;
+      if (!groups[groupCode]) groups[groupCode] = { code: groupCode, label: groupLabel, accounts: {} };
       const acc = r.account || '(sem conta)';
       if (!groups[groupCode].accounts[acc]) groups[groupCode].accounts[acc] = { value: 0, count: 0 };
-      groups[groupCode].accounts[acc].value += Math.abs(r.signed);
+      groups[groupCode].accounts[acc].value += r.signed;
       groups[groupCode].accounts[acc].count++;
     }
-    const total = kindRows.reduce((s, r) => s + Math.abs(r.signed), 0);
+    const total = kindRows.reduce((s, r) => s + r.signed, 0);
     return {
       groups: Object.entries(groups).map(([code, g]) => {
         const subtotal = Object.values(g.accounts).reduce((s, a) => s + a.value, 0);
         return {
           code,
-          label: ACCOUNT_GROUP_LABELS[code] || `Grupo ${code}`,
+          label: g.label,
           subtotal,
           accounts: Object.entries(g.accounts)
             .map(([name, a]) => ({ name, value: a.value, count: a.count, pct: total > 0 ? a.value / total * 100 : 0 }))
@@ -54,32 +56,56 @@ export function buildDREHierarchy(rows) {
 // ─── DRE (Resultado) ─────────────────────────────────────────────────────────
 
 export function calcDREKPIs(rows) {
-  let receita = 0, despesa = 0;
+  let receita = 0, csv = 0, opex = 0, fin = 0, other = 0;
   for (const r of rows) {
-    if (r.kind === 'receita') receita += r.signed;
-    else                      despesa += r.signed;
+    const sk = r.subkind || (r.kind === 'receita' ? 'receita' : 'other');
+    if (sk === 'receita')     receita += r.signed;
+    else if (sk === 'csv')    csv     += r.signed;
+    else if (sk === 'opex')   opex    += r.signed;
+    else if (sk === 'fin')    fin     += r.signed;
+    else                      other   += r.signed;
   }
-  const resultado = receita - despesa;
-  const margem    = receita > 0 ? (resultado / receita) * 100 : 0;
-  return { receita, despesa, resultado, margem };
+  const despesa     = csv + opex + fin + other;
+  const margemBruta = receita - csv;
+  const resultado   = receita - despesa;
+  return {
+    receita, csv, opex, fin, other, despesa,
+    margemBruta,
+    margemBrutaPct: receita > 0 ? (margemBruta / receita) * 100 : 0,
+    resultado,
+    margem:      receita > 0 ? (resultado / receita) * 100 : 0,
+    taxaDespesa: receita > 0 ? (despesa    / receita) * 100 : 0,
+  };
 }
 
-// { 'YYYY-MM': { key, receita, despesa, resultado, margem } }
+// { 'YYYY-MM': { key, receita, csv, opex, fin, other, despesa, margemBruta, margemBrutaPct, resultado, margem } }
 export function groupByMonthDRE(rows) {
   const map = {};
   for (const r of rows) {
     if (!r.date) continue;
     const key = `${r.date.getFullYear()}-${String(r.date.getMonth() + 1).padStart(2, '0')}`;
-    if (!map[key]) map[key] = { key, receita: 0, despesa: 0 };
-    if (r.kind === 'receita') map[key].receita += r.signed;
-    else                      map[key].despesa += r.signed;
+    if (!map[key]) map[key] = { key, receita: 0, csv: 0, opex: 0, fin: 0, other: 0 };
+    const sk = r.subkind || (r.kind === 'receita' ? 'receita' : 'other');
+    if (sk === 'receita')   map[key].receita += r.signed;
+    else if (sk === 'csv')  map[key].csv     += r.signed;
+    else if (sk === 'opex') map[key].opex    += r.signed;
+    else if (sk === 'fin')  map[key].fin     += r.signed;
+    else                    map[key].other   += r.signed;
   }
   return Object.values(map)
-    .map(m => ({
-      ...m,
-      resultado: m.receita - m.despesa,
-      margem:    m.receita > 0 ? ((m.receita - m.despesa) / m.receita) * 100 : 0,
-    }))
+    .map(m => {
+      const despesa     = m.csv + m.opex + m.fin + m.other;
+      const margemBruta = m.receita - m.csv;
+      const resultado   = m.receita - despesa;
+      return {
+        ...m,
+        despesa,
+        margemBruta,
+        margemBrutaPct: m.receita > 0 ? (margemBruta / m.receita) * 100 : 0,
+        resultado,
+        margem: m.receita > 0 ? (resultado / m.receita) * 100 : 0,
+      };
+    })
     .sort((a, b) => a.key.localeCompare(b.key));
 }
 
@@ -105,22 +131,29 @@ export function groupByAccount(rows, kind = null) {
     if (kind && r.kind !== kind) continue;
     const key = r.account || '(sem categoria)';
     if (!map[key]) map[key] = { account: key, value: 0, count: 0, kind: r.kind };
-    map[key].value += r.kind === 'despesa' ? Math.abs(r.signed) : r.signed;
+    map[key].value += r.signed;
     map[key].count++;
   }
   return Object.values(map).sort((a, b) => b.value - a.value);
 }
 
 // Waterfall chart data para Recharts (stacked bar trick)
-// Cada item: { name, spacer (transparent), value (colored), type, running }
+// Estrutura: Receita → [Reversões] → Rec. Líquida → Desp. Vendas → Margem Bruta → overhead → Resultado
 export function buildWaterfall(rows) {
   const receitaBruta = rows.filter(r => r.kind === 'receita' && r.op === 'C').reduce((s, r) => s + r.value, 0);
   const reversoes    = rows.filter(r => r.kind === 'receita' && r.op === 'D').reduce((s, r) => s + r.value, 0);
   const receitaLiq   = receitaBruta - reversoes;
 
-  const despByAcc = groupByAccount(rows, 'despesa');
-  const topN      = despByAcc.slice(0, 6);
-  const outras    = despByAcc.slice(6).reduce((s, d) => s + d.value, 0);
+  // Custo direto dos serviços (CSV)
+  const csvTotal = rows
+    .filter(r => r.subkind === 'csv')
+    .reduce((s, r) => s + r.signed, 0);
+
+  // Demais despesas (overhead: opex + fin + other), agrupadas por conta
+  const overheadRows = rows.filter(r => r.kind === 'despesa' && r.subkind !== 'csv');
+  const despByAcc    = groupByAccount(overheadRows);
+  const topN         = despByAcc.slice(0, 5);
+  const outras       = despByAcc.slice(5).reduce((s, d) => s + d.value, 0);
 
   let running = 0;
   const items = [];
@@ -138,16 +171,23 @@ export function buildWaterfall(rows) {
   items.push({ name: 'Rec. Líquida', spacer: 0, value: receitaLiq, type: 'subtotal', running: receitaLiq });
   running = receitaLiq;
 
+  if (csvTotal > 0) {
+    push('Desp. c/ Vendas', -csvTotal, 'csv');
+    const mb = running;
+    items.push({ name: 'Rec. Líquida', spacer: mb >= 0 ? 0 : mb, value: Math.abs(mb), type: 'subtotal_mb', running: mb });
+    running = mb;
+  }
+
   for (const d of topN) {
-    const label = d.account.length > 22 ? d.account.slice(0, 22) + '…' : d.account;
+    const label = d.account.length > 20 ? d.account.slice(0, 20) + '…' : d.account;
     push(label, -d.value, 'despesa');
   }
-  if (outras > 0) push('Outras Despesas', -outras, 'despesa');
+  if (outras !== 0) push('Outras Overhead', -outras, 'despesa');
 
   const resultado = running;
   items.push({ name: 'Resultado', spacer: resultado >= 0 ? 0 : resultado, value: Math.abs(resultado), type: resultado >= 0 ? 'total_pos' : 'total_neg', running: resultado });
 
-  return { items, receitaBruta, reversoes, receitaLiq, resultado };
+  return { items, receitaBruta, reversoes, receitaLiq, csvTotal, resultado };
 }
 
 // Heat map: mês × conta → valor
@@ -172,21 +212,30 @@ export function buildHeatMap(rows, kind = 'despesa', topN = 12) {
   return { accounts, months, matrix };
 }
 
-// Agrupa por filial (unit)
+// Agrupa por filial (unit) com separação CSV / overhead
 export function groupByUnit(rows) {
   const map = {};
   for (const r of rows) {
     const key = r.unit || '(sem filial)';
-    if (!map[key]) map[key] = { unit: key, receita: 0, despesa: 0 };
-    if (r.kind === 'receita') map[key].receita += r.signed;
-    else                      map[key].despesa += r.signed;
+    if (!map[key]) map[key] = { unit: key, receita: 0, csv: 0, overhead: 0 };
+    if (r.kind === 'receita')              map[key].receita  += r.signed;
+    else if (r.subkind === 'csv')          map[key].csv      += r.signed;
+    else                                   map[key].overhead += r.signed;
   }
   return Object.values(map)
-    .map(m => ({
-      ...m,
-      resultado: m.receita - m.despesa,
-      margem:    m.receita > 0 ? ((m.receita - m.despesa) / m.receita) * 100 : 0,
-    }))
+    .map(m => {
+      const despesa     = m.csv + m.overhead;
+      const margemBruta = m.receita - m.csv;
+      const resultado   = m.receita - despesa;
+      return {
+        ...m,
+        despesa,
+        margemBruta,
+        margemBrutaPct: m.receita > 0 ? (margemBruta / m.receita) * 100 : 0,
+        resultado,
+        margem: m.receita > 0 ? (resultado / m.receita) * 100 : 0,
+      };
+    })
     .sort((a, b) => b.resultado - a.resultado);
 }
 
@@ -274,39 +323,6 @@ export function groupCashByPerson(rows) {
     .sort((a, b) => Math.abs(b.saidas) - Math.abs(a.saidas));
 }
 
-// ─── Aging (Abertas) ─────────────────────────────────────────────────────────
-
-export function calcAgingKPIs(rows) {
-  let pagar = 0, receber = 0;
-  for (const r of rows) {
-    if (r.type === 'PAGAR')   pagar   += r.value;
-    else                      receber += r.value;
-  }
-  return { pagar, receber, saldo: receber - pagar };
-}
-
-export function groupAgingByBucket(rows) {
-  const map = { vencido: { pagar: 0, receber: 0 }, '0-30': { pagar: 0, receber: 0 }, '31-60': { pagar: 0, receber: 0 }, '60+': { pagar: 0, receber: 0 } };
-  for (const r of rows) {
-    const b = map[r.agingBucket];
-    if (!b) continue;
-    if (r.type === 'PAGAR') b.pagar   += r.value;
-    else                    b.receber += r.value;
-  }
-  return map;
-}
-
-export function groupAgingByPerson(rows) {
-  const map = {};
-  for (const r of rows) {
-    const key = r.person || '(sem nome)';
-    if (!map[key]) map[key] = { person: key, type: r.type, pagar: 0, receber: 0 };
-    if (r.type === 'PAGAR') map[key].pagar   += r.value;
-    else                    map[key].receber += r.value;
-  }
-  return Object.values(map).sort((a, b) => (b.pagar + b.receber) - (a.pagar + a.receber));
-}
-
 // ─── Comparativo A × B ───────────────────────────────────────────────────────
 
 export function compareKPIs(rowsA, rowsB) {
@@ -315,10 +331,12 @@ export function compareKPIs(rowsA, rowsB) {
   const pct  = (a, b) => b !== 0 ? ((a - b) / Math.abs(b)) * 100 : null;
   return {
     a: kpiA, b: kpiB,
-    deltaReceita:   pct(kpiA.receita,   kpiB.receita),
-    deltaDespesa:   pct(kpiA.despesa,   kpiB.despesa),
-    deltaResultado: pct(kpiA.resultado, kpiB.resultado),
-    deltaMargem:    kpiA.margem - kpiB.margem,
+    deltaReceita:     pct(kpiA.receita,     kpiB.receita),
+    deltaCsv:         pct(kpiA.csv,         kpiB.csv),
+    deltaMargemBruta: kpiA.margemBrutaPct - kpiB.margemBrutaPct,
+    deltaDespesa:     pct(kpiA.despesa,     kpiB.despesa),
+    deltaResultado:   pct(kpiA.resultado,   kpiB.resultado),
+    deltaMargem:      kpiA.margem          - kpiB.margem,
   };
 }
 
@@ -333,4 +351,78 @@ export function compareByAccount(rowsA, rowsB, kind = null) {
     delta:   a.value - (mapB[a.account] || 0),
     deltaPct: mapB[a.account] ? ((a.value - mapB[a.account]) / Math.abs(mapB[a.account])) * 100 : null,
   }));
+}
+
+// ─── Conciliação (BaixadasProdutos) ──────────────────────────────────────────
+
+export function calcConcilKPIs(rows) {
+  let receber = 0, pagar = 0;
+  for (const r of rows) {
+    if (r.type === 'RECEBER') receber += r.value;
+    else                      pagar   += r.value;
+  }
+  const saldo     = receber - pagar;
+  const cobertura = pagar > 0 ? (receber / pagar) * 100 : null;
+  return { receber, pagar, saldo, cobertura, count: rows.length };
+}
+
+// Agrupa por filial → { unit, receber, pagar, saldo }[]
+export function groupConcilByUnit(rows) {
+  const map = {};
+  for (const r of rows) {
+    const key = r.unit || '(sem filial)';
+    if (!map[key]) map[key] = { unit: key, receber: 0, pagar: 0, count: 0 };
+    if (r.type === 'RECEBER') map[key].receber += r.value;
+    else                      map[key].pagar   += r.value;
+    map[key].count++;
+  }
+  return Object.values(map)
+    .map(m => ({ ...m, saldo: m.receber - m.pagar }))
+    .sort((a, b) => b.receber - a.receber);
+}
+
+// Agrupa por pessoa filtrando por tipo → { person, value, count }[]
+export function groupConcilByPerson(rows, type) {
+  const map = {};
+  for (const r of rows) {
+    if (r.type !== type) continue;
+    const key = r.person || '(sem nome)';
+    if (!map[key]) map[key] = { person: key, value: 0, count: 0 };
+    map[key].value += r.value;
+    map[key].count++;
+  }
+  return Object.values(map).sort((a, b) => b.value - a.value);
+}
+
+// Agrupa por venda → { saleId, unit, receber, pagar, saldo, count }[] top 100
+export function groupConcilBySale(rows) {
+  const map = {};
+  for (const r of rows) {
+    if (!r.saleId) continue;
+    const key = r.saleId;
+    if (!map[key]) map[key] = { saleId: key, unit: r.unit || '', receber: 0, pagar: 0, count: 0 };
+    if (r.type === 'RECEBER') map[key].receber += r.value;
+    else                      map[key].pagar   += r.value;
+    map[key].count++;
+  }
+  return Object.values(map)
+    .map(m => ({ ...m, saldo: m.receber - m.pagar }))
+    .sort((a, b) => (b.receber + b.pagar) - (a.receber + a.pagar))
+    .slice(0, 100);
+}
+
+// Evolução mensal conciliação → [{ key, receber, pagar, saldo }]
+export function groupConcilByMonth(rows) {
+  const map = {};
+  for (const r of rows) {
+    const d = r.payDate;
+    if (!d) continue;
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (!map[key]) map[key] = { key, receber: 0, pagar: 0 };
+    if (r.type === 'RECEBER') map[key].receber += r.value;
+    else                      map[key].pagar   += r.value;
+  }
+  return Object.values(map)
+    .map(m => ({ ...m, saldo: m.receber - m.pagar }))
+    .sort((a, b) => a.key.localeCompare(b.key));
 }

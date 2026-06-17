@@ -17,6 +17,9 @@ function parseISODate(str) {
   return new Date(str);
 }
 
+// contabilPai da conta "DESPESAS COM VENDAS" — custo direto dos serviços
+const CSV_CONTABIL_PAI = '410111';
+
 // Classifica a conta pelo prefixo de contaextendida:
 //   3xxx → receita (normal balance = crédito)
 //   4xxx → despesa (normal balance = débito)
@@ -28,6 +31,21 @@ function classifyKind(code, op) {
   return op === 'C' ? 'receita' : 'despesa';
 }
 
+// Subclassifica despesas para DRE em camadas usando contabilPai (campo da API):
+//   csv   → contabilPai === '410111' (DESPESAS COM VENDAS) — custo direto
+//   opex  → demais contas 41xxx (overhead operacional: pessoal, encargos, etc.)
+//   fin   → contas 42xxx (despesas financeiras)
+//   other → demais (43xxx+)
+// Fallback para contaextendida quando contabilPai não vem preenchido.
+function classifySubkind(contabilPai, code, kind) {
+  if (kind === 'receita') return 'receita';
+  const pai = contabilPai || code.slice(0, 6);
+  if (pai === CSV_CONTABIL_PAI) return 'csv';
+  if (pai.startsWith('42') || code.startsWith('42')) return 'fin';
+  if (pai.startsWith('4')  || code.startsWith('4'))  return 'opex';
+  return 'other';
+}
+
 // Signed amount para o DRE:
 //   receita: C = +value (crédito aumenta receita), D = -value (débito reverte)
 //   despesa: D = +value (débito aumenta despesa), C = -value (crédito reverte)
@@ -37,22 +55,26 @@ function calcSigned(kind, op, value) {
 }
 
 export function normalizeResultado(raw) {
-  const value = Math.abs(parseNum(raw.vlvalor));
-  const op    = String(raw.dsoperacao || '').toUpperCase();
-  const code  = String(raw.contaextendida || '');
-  const kind  = classifyKind(code, op);
+  const value       = Math.abs(parseNum(raw.vlvalor));
+  const op          = String(raw.dsoperacao || '').toUpperCase();
+  const code        = String(raw.contaextendida || '');
+  const contabilPai = String(raw.contabilPai || '').trim();
+  const kind        = classifyKind(code, op);
 
   return {
-    id:            raw.idlancamento,
-    date:          parseISODate(raw.dtmovimento),
-    unit:          String(raw.nmunidade || '').trim(),
-    account:       String(raw.dsPartida || raw.dspartida || '').trim(),
-    accountCode:   code,
-    counter:       String(raw.dsContraPartida || raw.dscontrapartida || '').trim(),
-    doc:           String(raw.dscomplemento || '').trim(),
-    docII:         String(raw.dscomplementoII || '').trim(),
-    saleId:        raw.idvenda || 0,
-    titleId:       raw.idtitulo || 0,
+    id:              raw.idlancamento,
+    date:            parseISODate(raw.dtmovimento),
+    unit:            String(raw.nmunidade || '').trim(),
+    account:         String(raw.dsPartida || raw.dspartida || '').trim(),
+    accountCode:     code,
+    contabilPai,
+    nomeContabilPai: String(raw.nomeContabilPai || '').trim(),
+    counter:         String(raw.dsContraPartida || raw.dscontrapartida || '').trim(),
+    doc:             String(raw.dscomplemento || '').trim(),
+    docII:           String(raw.dscomplementoII || '').trim(),
+    saleId:          raw.idvenda || 0,
+    titleId:         raw.idtitulo || 0,
+    subkind:         classifySubkind(contabilPai, code, kind),
     value,
     op,
     kind,
@@ -85,40 +107,35 @@ export function normalizeBaixada(raw) {
   };
 }
 
-export function normalizeAberta(raw) {
-  const value   = Math.abs(parseNum(raw.valorpagamento ?? raw.vltitulo ?? 0));
-  const type    = String(raw.tpconta || '').toUpperCase();
-  const dueDate = parseBRDate(raw.dtvencimento);
-  const today   = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  let agingBucket = '0-30';
-  if (dueDate) {
-    const diffDays = Math.floor((dueDate - today) / (1000 * 60 * 60 * 24));
-    if (diffDays < 0)       agingBucket = 'vencido';
-    else if (diffDays <= 30) agingBucket = '0-30';
-    else if (diffDays <= 60) agingBucket = '31-60';
-    else                     agingBucket = '60+';
-  }
+// Contas Baixadas por Produto — vincula pagamento/recebimento a uma venda específica
+export function normalizeBaixadaProduto(raw) {
+  const value = Math.abs(parseNum(raw.valorpagamento ?? raw.valorpagamentomoeda));
+  const type  = String(raw.tpconta || '').toUpperCase();
 
   return {
-    id:          raw.idconta || raw.idtitulo,
+    controlId:     String(raw.idcontrole || ''),
     type,
-    issueDate:   parseBRDate(raw.dtemissao),
-    dueDate,
+    invoiceNumber: String(raw.nrfatura || ''),
+    saleId:        Number(raw.idvenda)    || 0,
+    seqId:         Number(raw.idseqitens) || 0,
+    supplierId:    Number(raw.idfornecedor) || 0,
+    issueDate:     parseBRDate(raw.dtemissao),
+    dueDate:       parseBRDate(raw.dtvencimento),
+    payDate:       parseBRDate(raw.datapagamento),
     value,
-    person:      String(raw.nomepessoa || '').trim(),
-    unit:        String(raw.filial || '').trim(),
-    titleType:   String(raw.tipotitulo || '').trim(),
-    cashSigned:  type === 'RECEBER' ? value : -value,
-    agingBucket,
+    account:       String(raw.nomecontapagamento || '').trim(),
+    unit:          String(raw.filial || '').trim(),
+    person:        String(raw.nomepessoa || '').trim(),
+    invoiceId:     Number(raw.idfatagrupada) || 0,
+    operationType: String(raw.dsoperacaocontas || ''),
+    cashSigned:    type === 'RECEBER' ? value : -value,
   };
 }
 
 export function normalizeFinanceRows(rows, recurso) {
   if (!Array.isArray(rows)) return [];
-  if (recurso === 'resultado')   return rows.map(normalizeResultado);
-  if (recurso === 'baixadas')    return rows.map(normalizeBaixada);
-  if (recurso === 'abertas')     return rows.map(normalizeAberta);
+  if (recurso === 'resultado')        return rows.map(normalizeResultado);
+  if (recurso === 'baixadas')         return rows.map(normalizeBaixada);
+  if (recurso === 'baixadasProdutos') return rows.map(normalizeBaixadaProduto);
   return rows;
 }

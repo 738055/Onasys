@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react';
 import { calcAgingKPIs, groupAgingByBucket, groupAgingByPerson } from '../../utils/financeAggregations';
 import { BRLFULL, PCTFMT, FINANCE_COLORS, AGING_LABELS, AGING_ORDER } from '../../utils/financeFormat';
 import { KPICard } from '../../components/KPICard';
-import { ArrowUp, ArrowDown, Scale } from 'lucide-react';
+import { InfoTooltip, TooltipFormula, TooltipTitle } from '../../components/InfoTooltip';
+import { ArrowUp, ArrowDown, Scale, AlertCircle } from 'lucide-react';
 import { Loader } from '../../components/Loader';
 
-export default function PayablesPage({ rows, loading }) {
+export default function PayablesPage({ rows, loading, periodoLabel }) {
   const [typeFilter, setTypeFilter] = useState('ALL'); // 'ALL' | 'PAGAR' | 'RECEBER'
 
   const filtered = useMemo(() =>
@@ -32,12 +33,47 @@ export default function PayablesPage({ rows, loading }) {
 
   return (
     <div className="space-y-6">
+      {/* Banner de contexto — posição atual, não filtrada por período */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">
+        <AlertCircle size={15} className="text-amber-600 flex-shrink-0 mt-0.5" />
+        <div className="text-xs text-amber-800">
+          <span className="font-bold">Posição atual do sistema</span>
+          {' '}— esta aba exibe os títulos em aberto hoje, independente do período selecionado
+          {periodoLabel ? ` (${periodoLabel} não se aplica aqui)` : ''}.
+          {' '}O vencimento é calculado em relação à data de hoje.
+        </div>
+      </div>
+
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <KPICard title="A Receber" value={kpi.receber} format="currency" icon={ArrowUp}  color="green" />
-        <KPICard title="A Pagar"   value={kpi.pagar}   format="currency" icon={ArrowDown} color="red"   />
         <KPICard
-          title="Posição Líquida"
+          title={<span className="flex items-center gap-1">A Receber<InfoTooltip>
+            <TooltipTitle>Total a Receber</TooltipTitle>
+            <TooltipFormula>Σ títulos RECEBER em aberto</TooltipFormula>
+            <span className="text-slate-300">Soma de todos os títulos de recebimento ainda não liquidados. Posição atual do ERP.</span>
+          </InfoTooltip></span>}
+          value={kpi.receber}
+          format="currency"
+          icon={ArrowUp}
+          color="green"
+        />
+        <KPICard
+          title={<span className="flex items-center gap-1">A Pagar<InfoTooltip>
+            <TooltipTitle>Total a Pagar</TooltipTitle>
+            <TooltipFormula>Σ títulos PAGAR em aberto</TooltipFormula>
+            <span className="text-slate-300">Soma de todos os títulos de pagamento ainda não liquidados — fornecedores, despesas, impostos.</span>
+          </InfoTooltip></span>}
+          value={kpi.pagar}
+          format="currency"
+          icon={ArrowDown}
+          color="red"
+        />
+        <KPICard
+          title={<span className="flex items-center gap-1">Posição Líquida<InfoTooltip>
+            <TooltipTitle>Posição Líquida</TooltipTitle>
+            <TooltipFormula>A Receber − A Pagar</TooltipFormula>
+            <span className="text-slate-300">Positivo = temos mais a receber do que a pagar (posição favorável). Negativo = mais compromissos do que créditos pendentes.</span>
+          </InfoTooltip></span>}
           value={kpi.saldo}
           format="currency"
           icon={Scale}

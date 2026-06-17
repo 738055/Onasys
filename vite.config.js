@@ -236,11 +236,10 @@ function buildOnasysGatewayPlugin(env) {
   // ─── Endpoints contábeis ──────────────────────────────────────────────────
 
   const CONTABIL_PATH_MAP = {
-    resultado:  (ini, fim)      => `Lancamentos/LancamentosContabeisResultado/${ini}/${fim}`,
-    baixadas:   (ini, fim)      => `Lancamentos/contasBaixadas/${ini}/${fim}`,
-    lancamentos:(ini, fim)      => `Lancamentos/LancamentosContabeis/${ini}/${fim}`,
-    todos:      (ini, fim, tipo)=> `Lancamentos/LancamentosContabeisTodos/${ini}/${fim}/${tipo || 'R'}`,
-    abertas:    ()              => `Lancamentos/contasAbertas`,
+    resultado:        (ini, fim) => `Lancamentos/LancamentosContabeisResultado/${ini}/${fim}`,
+    baixadas:         (ini, fim) => `Lancamentos/contasBaixadas/${ini}/${fim}`,
+    baixadasProdutos: (ini, fim) => `Lancamentos/ContasBaixadasProdutos/${ini}/${fim}`,
+    lancamentos:      (ini, fim) => `Lancamentos/LancamentosContabeis/${ini}/${fim}`,
   };
 
   async function fetchContabilFromEndpoint(endpoint, token, jsonBody = null) {
@@ -268,8 +267,14 @@ function buildOnasysGatewayPlugin(env) {
     // Estratégia 1: base interna com path params
     const internalPath = `${internalBase}/${pathFn(periodoInicial, periodoFinal, tipo)}`;
     // Estratégia 2: base externa financeira com JSON body
-    const externalPath = `${financeExternalBase}/Lancamentos/${recurso === 'resultado' ? 'LancamentosContabeisResultado' : recurso === 'baixadas' ? 'contasBaixadas' : recurso === 'lancamentos' ? 'LancamentosContabeis' : recurso === 'todos' ? `LancamentosContabeisTodos` : 'contasAbertas'}`;
-    const externalBody = { periodoInicial, periodoFinal, ...(recurso === 'todos' ? { tipo: tipo || 'R' } : {}) };
+    const EXTERNAL_RESOURCE_MAP = {
+      resultado:        'LancamentosContabeisResultado',
+      baixadas:         'contasBaixadas',
+      baixadasProdutos: 'ContasBaixadasProdutos',
+      lancamentos:      'LancamentosContabeis',
+    };
+    const externalPath = `${financeExternalBase}/Lancamentos/${EXTERNAL_RESOURCE_MAP[recurso] || recurso}`;
+    const externalBody = { periodoInicial, periodoFinal };
 
     const attempts = [
       { endpoint: internalPath,  body: null,         source: 'internal' },

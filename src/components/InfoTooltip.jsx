@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Info } from 'lucide-react';
 
-export function InfoTooltip({ text }) {
+// Tooltip informativo — aceita `text` (string simples) ou `children` (JSX estruturado)
+export function InfoTooltip({ text, children }) {
   const [visible, setVisible] = useState(false);
 
   return (
@@ -12,20 +13,37 @@ export function InfoTooltip({ text }) {
         onMouseLeave={() => setVisible(false)}
         onFocus={() => setVisible(true)}
         onBlur={() => setVisible(false)}
-        className="ml-0.5 text-slate-300 hover:text-blue-400 focus:outline-none transition-colors"
-        aria-label="Como é calculado"
+        className="ml-1 text-slate-400 hover:text-blue-500 focus:outline-none transition-colors duration-150"
+        aria-label="Mais informações"
       >
-        <Info size={12} />
+        <Info size={13} />
       </button>
       {visible && (
         <div
           role="tooltip"
-          className="absolute bottom-full left-0 mb-2 z-[200] w-72 bg-slate-800 text-white text-[11px] rounded-lg px-3 py-2.5 shadow-xl leading-relaxed whitespace-normal pointer-events-none"
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-[200] w-80 bg-slate-900 text-white rounded-xl shadow-2xl pointer-events-none"
+          style={{ minWidth: 240 }}
         >
-          {text}
-          <div className="absolute top-full left-4 border-4 border-transparent border-t-slate-800" />
+          <div className="px-4 py-3 text-[11px] leading-relaxed whitespace-normal">
+            {children ?? <span className="text-slate-200">{text}</span>}
+          </div>
+          <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-slate-900" />
         </div>
       )}
     </span>
   );
+}
+
+// Bloco de fórmula para uso dentro de InfoTooltip (JSX estruturado)
+export function TooltipFormula({ formula }) {
+  return (
+    <span className="block font-mono text-emerald-300 text-[10px] bg-slate-800 rounded px-2 py-1 my-1.5">
+      {formula}
+    </span>
+  );
+}
+
+// Linha de título dentro de InfoTooltip
+export function TooltipTitle({ children }) {
+  return <span className="block font-bold text-white mb-1">{children}</span>;
 }

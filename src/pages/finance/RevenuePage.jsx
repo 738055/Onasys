@@ -6,7 +6,7 @@ import { Search } from 'lucide-react';
 import { groupByAccount, buildAccountTrend, calcDREKPIs, groupByUnit, groupByMonthDRE } from '../../utils/financeAggregations';
 import { BRLFULL, BRLk, PCTFMT, FINANCE_COLORS, fmtMonthKey, accountColor } from '../../utils/financeFormat';
 import { ExportButton } from '../../components/ExportButton';
-import { InfoTooltip }  from '../../components/InfoTooltip';
+import { InfoTooltip, TooltipFormula, TooltipTitle } from '../../components/InfoTooltip';
 
 export default function RevenuePage({ rows, loading }) {
   const [search, setSearch]   = useState('');
@@ -75,7 +75,11 @@ export default function RevenuePage({ rows, loading }) {
       <div className="flex items-center justify-between">
         <h1 className="text-base font-bold text-slate-800 flex items-center gap-1.5">
           Análise de Receitas
-          <InfoTooltip text="Todos os lançamentos de receita (contas 3xxx) no período. Op=C são entradas normais; Op=D são reversões que reduzem a receita líquida." />
+          <InfoTooltip>
+            <TooltipTitle>Análise de Receitas</TooltipTitle>
+            <TooltipFormula>Σ lançamentos 3xxx (op=C − op=D)</TooltipFormula>
+            <span className="text-slate-300">Faturamento por conta contábil. Entradas normais (op=C) somadas; estornos (op=D) deduzidos. Os percentuais mostram participação na Receita Bruta total.</span>
+          </InfoTooltip>
         </h1>
         <ExportButton title="Receitas Financeiro" slug="financeiro-receitas" sections={exportSections} />
       </div>

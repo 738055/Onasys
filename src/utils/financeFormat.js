@@ -45,11 +45,3 @@ export function accountColor(name) {
   return _accountColorCache[name];
 }
 
-export const AGING_LABELS = {
-  vencido: 'Vencido',
-  '0-30':  'Vence em 0–30 dias',
-  '31-60': 'Vence em 31–60 dias',
-  '60+':   'Vence em 60+ dias',
-};
-
-export const AGING_ORDER = ['vencido', '0-30', '31-60', '60+'];

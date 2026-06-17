@@ -4,7 +4,7 @@ import {
 } from '../../utils/financeAggregations';
 import { BRLFULL, PCTFMT, fmtMonthKey } from '../../utils/financeFormat';
 import { ExportButton } from '../../components/ExportButton';
-import { InfoTooltip }  from '../../components/InfoTooltip';
+import { InfoTooltip, TooltipFormula, TooltipTitle } from '../../components/InfoTooltip';
 
 const TIPOCONTA_LABELS = { R: 'Resultado', A: 'Ativo', P: 'Passivo' };
 
@@ -26,8 +26,8 @@ export default function DREPage({ rows, loading }) {
       const key = r.date ? `${r.date.getFullYear()}-${String(r.date.getMonth() + 1).padStart(2,'0')}` : null;
       if (!key) continue;
       if (!map[r.account]) map[r.account] = { total: 0 };
-      map[r.account][key] = (map[r.account][key] || 0) + Math.abs(r.signed);
-      map[r.account].total += Math.abs(r.signed);
+      map[r.account][key] = (map[r.account][key] || 0) + r.signed;
+      map[r.account].total += r.signed;
     }
     return map;
   }
@@ -71,7 +71,7 @@ export default function DREPage({ rows, loading }) {
       ],
       rows: despesas.map(d => ({
         ...d,
-        pct: kpi.despesa > 0 ? d.value / kpi.despesa * 100 : 0,
+        pct: kpi.receita > 0 ? d.value / kpi.receita * 100 : 0,
       })),
     },
   ], [monthSeries, receitas, despesas, kpi]);
@@ -86,10 +86,18 @@ export default function DREPage({ rows, loading }) {
             <span className="text-[11px] bg-indigo-100 text-indigo-700 font-semibold px-2 py-0.5 rounded-full">
               tipoconta R — {TIPOCONTA_LABELS['R']}
             </span>
-            <InfoTooltip text="Lançamentos contábeis do tipo R (Resultado). Contas 3xxx = Receitas, contas 4xxx = Despesas. Op C = crédito normal; Op D = débito (pode ser reversão de receita)." />
+            <InfoTooltip>
+              <TooltipTitle>Demonstração do Resultado (DRE)</TooltipTitle>
+              <TooltipFormula>Receita Bruta − Custo Serviços = Rec. Líquida → − Overhead = Resultado</TooltipFormula>
+              <span className="text-slate-300">Fonte: ERP contábil (tipoconta R). Contas 3xxx = receitas; 4xxx = despesas. Estornos (op=D) reduzem o respectivo total.</span>
+            </InfoTooltip>
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Receita: {BRLFULL(kpi.receita)} · Despesa: {BRLFULL(kpi.despesa)} · Resultado: <span className={kpi.resultado >= 0 ? 'text-blue-700 font-semibold' : 'text-red-600 font-semibold'}>{BRLFULL(kpi.resultado)}</span> · Margem: {PCTFMT(kpi.margem)}
+            Receita: {BRLFULL(kpi.receita)}
+            {' · '}Custo Serviços: <span className="text-violet-600">{BRLFULL(kpi.csv ?? 0)}</span>
+            {' · '}Rec. Líquida: <span className="text-indigo-700 font-semibold">{BRLFULL(kpi.margemBruta ?? 0)} ({PCTFMT(kpi.margemBrutaPct ?? 0)})</span>
+            {' · '}Resultado: <span className={kpi.resultado >= 0 ? 'text-blue-700 font-semibold' : 'text-red-600 font-semibold'}>{BRLFULL(kpi.resultado)}</span>
+            {' · '}Margem: {PCTFMT(kpi.margem)}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -124,12 +132,13 @@ function MensalView({ monthSeries, kpi }) {
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-slate-200 text-slate-500">
-            <th className="pb-2 text-left font-semibold w-28">Período</th>
+            <th className="pb-2 text-left font-semibold w-24">Período</th>
             <th className="pb-2 text-right font-semibold text-emerald-600">Receita</th>
-            <th className="pb-2 text-right font-semibold text-red-500">Despesa</th>
+            <th className="pb-2 text-right font-semibold text-violet-600">Custo Serv.</th>
+            <th className="pb-2 text-right font-semibold text-indigo-600">Rec. Líquida</th>
+            <th className="pb-2 text-right font-semibold text-indigo-400">Rec.Líq.%</th>
             <th className="pb-2 text-right font-semibold">Resultado</th>
             <th className="pb-2 text-right font-semibold">Margem %</th>
-            <th className="pb-2 text-right font-semibold">Taxa Despesa</th>
           </tr>
         </thead>
         <tbody>
@@ -137,15 +146,16 @@ function MensalView({ monthSeries, kpi }) {
             <tr key={m.key} className="border-b border-slate-50 hover:bg-slate-50">
               <td className="py-1.5 font-medium text-slate-700">{fmtMonthKey(m.key)}</td>
               <td className="py-1.5 text-right tabular-nums text-emerald-700">{BRLFULL(m.receita)}</td>
-              <td className="py-1.5 text-right tabular-nums text-red-600">{BRLFULL(m.despesa)}</td>
+              <td className="py-1.5 text-right tabular-nums text-violet-600">{BRLFULL(m.csv ?? 0)}</td>
+              <td className="py-1.5 text-right tabular-nums text-indigo-700 font-semibold">{BRLFULL(m.margemBruta ?? 0)}</td>
+              <td className={`py-1.5 text-right tabular-nums text-[11px] ${(m.margemBrutaPct ?? 0) >= 10 ? 'text-indigo-500' : 'text-amber-500'}`}>
+                {PCTFMT(m.margemBrutaPct ?? 0)}
+              </td>
               <td className={`py-1.5 text-right tabular-nums font-semibold ${m.resultado >= 0 ? 'text-blue-700' : 'text-amber-600'}`}>
                 {BRLFULL(m.resultado)}
               </td>
               <td className={`py-1.5 text-right tabular-nums ${m.margem >= 0 ? 'text-slate-600' : 'text-red-500'}`}>
                 {PCTFMT(m.margem)}
-              </td>
-              <td className="py-1.5 text-right tabular-nums text-slate-500">
-                {m.receita > 0 ? PCTFMT(m.despesa / m.receita * 100) : '—'}
               </td>
             </tr>
           ))}
@@ -154,10 +164,11 @@ function MensalView({ monthSeries, kpi }) {
           <tr className="font-bold text-slate-800">
             <td className="py-2">Total</td>
             <td className="py-2 text-right tabular-nums text-emerald-700">{BRLFULL(kpi.receita)}</td>
-            <td className="py-2 text-right tabular-nums text-red-600">{BRLFULL(kpi.despesa)}</td>
+            <td className="py-2 text-right tabular-nums text-violet-600">{BRLFULL(kpi.csv ?? 0)}</td>
+            <td className="py-2 text-right tabular-nums text-indigo-700">{BRLFULL(kpi.margemBruta ?? 0)}</td>
+            <td className={`py-2 text-right tabular-nums ${(kpi.margemBrutaPct ?? 0) >= 10 ? 'text-indigo-500' : 'text-amber-500'}`}>{PCTFMT(kpi.margemBrutaPct ?? 0)}</td>
             <td className={`py-2 text-right tabular-nums ${kpi.resultado >= 0 ? 'text-blue-700' : 'text-amber-600'}`}>{BRLFULL(kpi.resultado)}</td>
             <td className={`py-2 text-right tabular-nums ${kpi.margem >= 0 ? 'text-slate-600' : 'text-red-500'}`}>{PCTFMT(kpi.margem)}</td>
-            <td className="py-2 text-right tabular-nums text-slate-500">{kpi.receita > 0 ? PCTFMT(kpi.despesa / kpi.receita * 100) : '—'}</td>
           </tr>
         </tfoot>
       </table>

@@ -11,9 +11,8 @@ function monthRange(year, month) {
   return { start: `${year}-${m}-01`, end: `${year}-${m}-${d}` };
 }
 
-function buildEndpoint(startDate, endDate, recurso, tipo, apiPrefix, isDev) {
+function buildEndpoint(startDate, endDate, recurso, apiPrefix, isDev) {
   const params = new URLSearchParams({ periodoInicial: startDate, periodoFinal: endDate, recurso });
-  if (recurso === 'todos') params.set('tipo', tipo);
   return isDev
     ? `/api/onasys/contabil?${params}`
     : `${apiPrefix}/proxy/ContabilGateway.ashx?${params}`;
@@ -26,11 +25,11 @@ function buildEndpoint(startDate, endDate, recurso, tipo, apiPrefix, isDev) {
 //   year       — ano fixo (ex: 2024)
 //   startMonth — mês inicial (1–12), default 1
 //   endMonth   — mês final (1–12), default 12 (ou mês atual se year === ano atual)
-//   recurso    — 'resultado' | 'baixadas' | 'abertas'
+//   recurso    — 'resultado' | 'baixadas' | 'baixadasProdutos'
 //   enabled    — permite desabilitar o fetch
 //
 // Retorna: { rows, byMonth: { 'YYYY-MM': rows[] }, loading, error, loadedMonths }
-export function useFinanceSeries({ year, startMonth = 1, endMonth = 12, recurso = 'resultado', tipo = 'R', enabled = true }) {
+export function useFinanceSeries({ year, startMonth = 1, endMonth = 12, recurso = 'resultado', enabled = true }) {
   const [state, setState] = useState({ rows: [], byMonth: {}, loading: false, error: null, loadedMonths: 0 });
 
   const months = useMemo(() => {
@@ -61,7 +60,7 @@ export function useFinanceSeries({ year, startMonth = 1, endMonth = 12, recurso 
 
     const fetchOne = (month) => {
       const { start, end } = monthRange(year, month);
-      const endpoint = buildEndpoint(start, end, recurso, tipo, apiPrefix, isDev);
+      const endpoint = buildEndpoint(start, end, recurso, apiPrefix, isDev);
       const key = `${year}-${String(month).padStart(2, '0')}`;
 
       return fetch(endpoint, { signal: controller.signal })
@@ -100,7 +99,7 @@ export function useFinanceSeries({ year, startMonth = 1, endMonth = 12, recurso 
       });
 
     return () => controller.abort();
-  }, [year, startMonth, endMonth, recurso, tipo, enabled]);
+  }, [year, startMonth, endMonth, recurso, enabled]);
 
   return state;
 }

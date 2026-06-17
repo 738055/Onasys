@@ -30,9 +30,28 @@ src/
   pages/ComparativosPage.jsx — Comparação entre dois períodos
   pages/CancelamentosPage.jsx — Cancelados (excluídos do BI) + Reembolsos Aprovados (auditoria)
   FlowApp.jsx               — App separado: Fluxo Operacional (pax por dia, ddatain)
+  FinanceApp.jsx            — App separado: BI Financeiro (DRE, Caixa, Aging, Comparativos)
   components/PaxCompositionBar.jsx  — Mini stacked-bar de composição ADT/CHD/COL/RED/SEN/FREE
   components/PaxAuditModal.jsx      — Modal de auditoria de deduplicação de pax por venda
   components/ScaleAuditModal.jsx    — Modal de auditoria de escala operacional (idEscala)
+
+  — BI Financeiro (finance.html → finance-main.jsx → FinanceApp.jsx) —
+  utils/normalizeFinance.js         — normalizeResultado / normalizeBaixada / normalizeAberta
+  utils/financeAggregations.js      — KPIs DRE, buildWaterfall, buildDREHierarchy, groupByMonthDRE,
+                                      groupByAccount, buildHeatMap, buildAccountTrend, groupByUnit,
+                                      calcCashKPIs, groupCashByMonth/Day/Person,
+                                      calcAgingKPIs, groupAgingByBucket/Person, compareKPIs/ByAccount
+  utils/financeFormat.js            — FINANCE_COLORS, fmtMonthKey, fmtDateKey, accountColor,
+                                      AGING_LABELS, AGING_ORDER, MONTHS_SHORT/FULL
+  hooks/useFinanceData.js           — Fetch período único; DEV→gateway, PROD→ContabilGateway.ashx
+  hooks/useFinanceSeries.js         — Fan-out mês a mês (Promise.all); params: year/startMonth/endMonth
+  pages/finance/OverviewPage.jsx    — KPIs (6), waterfall DRE, evolução mensal, ranking categorias
+  pages/finance/DREPage.jsx         — Views: Mensal | Hierarquia (contaextendida) | Por Conta
+  pages/finance/ExpensesPage.jsx    — Ranking, tendência, heatmap mês×categoria, tabela detalhe
+  pages/finance/RevenuePage.jsx     — Barras mensais, top fontes, tendência, por filial
+  pages/finance/CashFlowPage.jsx    — KPIs, ComposedChart entradas×saídas+acumulado, por pessoa
+  pages/finance/PayablesPage.jsx    — Aging buckets, KPIs pagar/receber, por pessoa
+  pages/finance/ComparePage.jsx     — Período A × B; KPI table + variação por conta
 ```
 
 ---
@@ -380,3 +399,169 @@ Logs com prefixo `[BI]` ativos apenas em `import.meta.env.DEV` (desaparecem no b
 | H | Hotel | laranja (`#f97316`) |
 | S | Serviços | teal (`#14b8a6`) |
 | (outros) | Outros | cinza |
+
+---
+
+## BI Financeiro (`finance.html`)
+
+SPA separado, mesmo padrão do FlowApp. Entry point: `finance.html` → `src/finance-main.jsx` → `src/FinanceApp.jsx`.
+
+### Padrão draft/apply (igual ao App.jsx principal)
+
+`FinanceApp` mantém **committed states** (`year`, `startMonth`, `endMonth`) que disparam os fetches, e **draft states** (`draftYear`, `draftStartMonth`, `draftEndMonth`) editáveis sem re-fetch. O botão "Aplicar" fica destacado em azul quando há mudança pendente e comita os drafts nos committed. O filtro de filial (`unitFilter`) é client-side e **não** dispara re-fetch.
+
+```
+[draft year ▼] [draft startMonth ▼] até [draft endMonth ▼]  [Aplicar]  [filial ▼]
+       ↓ somente ao clicar Aplicar
+committed states → useFinanceSeries → rows (compartilhados entre todas as abas DRE)
+```
+
+### Endpoints contábeis
+
+```
+Gateway DEV:  GET /api/onasys/contabil?recurso=resultado&periodoInicial=YYYY-MM-DD&periodoFinal=YYYY-MM-DD
+Gateway PROD: GET /{subpath}/proxy/ContabilGateway.ashx?recurso=...
+```
+
+| recurso | Endpoint API | Observação |
+|---------|-------------|-----------|
+| `resultado` | `/Lancamentos/LancamentosContabeisResultado/{ini}/{fim}` | DRE — tipoconta R |
+| `baixadas`  | `/Lancamentos/contasBaixadas/{ini}/{fim}` | Caixa realizado |
+| `abertas`   | `/Lancamentos/contasAbertas` | Posição atual (sem filtro data) |
+| `todos`     | `/Lancamentos/LancamentosContabeisTodos/{ini}/{fim}/{tipo}` | Tipo A/P/R |
+
+**Limite da API:** máximo 1 mês por requisição. `useFinanceSeries` dispara `Promise.all` com 1 req/mês.
+
+**Base externa financeira:** `http://api.frt.onasys.com.br` — diferente da base BI (`api.wrb.onasys.com.br`). Env var: `ONASYS_FINANCE_EXTERNAL_BASE`.
+
+### Normalização — `normalizeFinance.js`
+
+#### `normalizeResultado(raw)` — fonte: `LancamentosContabeisResultado`
+
+| Campo API | Campo normalizado | Notas |
+|-----------|-------------------|-------|
+| `idlancamento` | `id` | ID único |
+| `dtmovimento` | `date` | ISO `2026-05-02T00:00:00` |
+| `nmunidade` | `unit` | Filial |
+| `dsPartida` / `dspartida` | `account` | Nome da conta (fallback minúsculo) |
+| `contaextendida` | `accountCode` | Código 11 dígitos; `3xxx`=receita, `4xxx`=despesa |
+| `dsContraPartida` / `dscontrapartida` | `counter` | Conta contrapartida |
+| `dscomplemento` | `doc` | Complemento/histórico |
+| `idvenda` | `saleId` | Vínculo ao ID de venda do BI |
+| `vlvalor` | `value` | Sempre positivo (abs) |
+| `dsoperacao` | `op` | `C` = crédito / `D` = débito |
+| — | `kind` | `'receita'` (3xxx) ou `'despesa'` (4xxx); fallback por op |
+| — | `signed` | Receita: C→+v, D→-v · Despesa: D→+v, C→-v |
+| `tipoconta` | — | Sempre `R` neste endpoint; exibido como badge informativo |
+
+**Reversão de receita:** conta `3xxx` com `op=D` → `signed < 0` → reduz receita líquida. Correto e esperado.
+
+#### `normalizeBaixada(raw)` — fonte: `contasBaixadas`
+
+| Campo API | Campo normalizado |
+|-----------|-------------------|
+| `idconta` | `id` |
+| `tpconta` | `type` (`PAGAR` / `RECEBER`) |
+| `idvenda` | `saleId` |
+| `datavencimento` | `dueDate` (BR DD/MM/YYYY → Date) |
+| `datapagamento` | `payDate` (BR → Date) |
+| `dataemissao` | `issueDate` |
+| `valorpagamento` | `value` |
+| `nomepessoa` | `person` |
+| `clientedavenda` | `client` |
+| `filial` | `unit` |
+| `nomecontapagamento` | `account` |
+| — | `cashSigned` | RECEBER→+value, PAGAR→-value |
+
+#### `normalizeAberta(raw)` — fonte: `contasAbertas`
+
+Shape do JSON ainda não foi validado com dados reais em produção. Campos esperados: `tpconta`, `dtvencimento`, `valor`, `nomepessoa`, `filial`. Campo `agingBucket` calculado client-side vs `new Date()`.
+
+### Regra de ouro — DRE financeiro
+
+```
+receitaLiquida = Σ signed (kind='receita')   // inclui reversões (signed negativo)
+despesaTotal   = Σ signed (kind='despesa')
+resultado      = receitaLiquida − despesaTotal
+margem%        = resultado / receitaLiquida × 100
+```
+
+**Nunca** usar `per_mkpliquido` nem médias de % — mesma regra do BI de rentabilidade.
+
+### Hierarquia de contas (`contaextendida`)
+
+O código de 11 dígitos (ex: `41010700006`) é agrupado pelos 2 primeiros dígitos:
+
+| Prefixo 2 dig | Grupo | Cor |
+|--------------|-------|-----|
+| `31` | Receitas Operacionais | verde |
+| `32` | Receitas Financeiras | esmeralda |
+| `33` | Receitas Não Operacionais | teal |
+| `41` | Despesas Operacionais | vermelho |
+| `42` | Despesas Financeiras | rosa |
+| `43` | Despesas Não Operacionais | âmbar |
+
+`buildDREHierarchy(rows)` em `financeAggregations.js` retorna `{ receitas: { groups, total }, despesas: { groups, total } }`.
+Cada `group`: `{ code, label, subtotal, accounts: [{ name, value, count, pct }] }`.
+
+`DREPage` oferece 3 views:
+- **Mensal** — tabela YYYY-MM com Receita/Despesa/Resultado/Margem/Taxa Despesa
+- **Hierarquia** — seções colapsáveis por grupo de conta, % sobre receita total
+- **Por Conta** — tabela pivô conta × mês (visão planilha)
+
+### Waterfall DRE
+
+`buildWaterfall(rows)` retorna dados para gráfico cascata (Recharts stacked bar transparente + colorido):
+
+```
+Receita Bruta → [Reversões] → Rec. Líquida (subtotal) →
+top 6 despesas por conta → [Outras Despesas] → Resultado
+```
+
+Cada item: `{ name, spacer (transparente), value (visível), type, running }`.
+Cores por `type`: `receita=#10b981`, `reducao=#f59e0b`, `subtotal=#3b82f6`, `despesa=#f43f5e`, `total_pos=#0ea5e9`, `total_neg=#ef4444`.
+
+### KPIs do Overview (6 cards)
+
+| KPI | Fórmula | Alerta cor |
+|-----|---------|-----------|
+| Receita Total | `Σ signed (kind=receita)` | verde |
+| Despesa Total | `Σ signed (kind=despesa)` | vermelho |
+| Resultado | Receita − Despesa | azul ≥ 0, âmbar < 0 |
+| Margem % | Resultado / Receita × 100 | indigo ≥10%, âmbar ≥0%, vermelho <0% |
+| Taxa de Despesa | Despesa / Receita × 100 | verde <80%, âmbar <95%, vermelho ≥95% |
+| Lançamentos | `rows.length` | slate |
+
+Todos os KPIs têm `InfoTooltip` explicando o cálculo.
+
+### Export (Excel + PDF)
+
+`FinanceApp` envolve tudo em `<ExportProvider value={exportCtx}>`. Cada aba usa `<ExportButton>` do padrão existente.
+
+`exportCtx`:
+```js
+{ startDate, endDate, qualPeriodo: 'DRE', nSistema: 'Financeiro', filters: { filial: [] } }
+```
+
+`buildMetadata` aceita strings livres em `nSistema`/`qualPeriodo` — exibidos literalmente no Excel/PDF.
+
+### Abas e dados
+
+| Aba | Hook | Lazy? | Dados |
+|-----|------|-------|-------|
+| Visão Geral | `useFinanceSeries` resultado | não | DRE |
+| DRE | idem | não | DRE |
+| Despesas | idem | não | DRE |
+| Receitas | idem | não | DRE |
+| Fluxo de Caixa | `useFinanceSeries` baixadas | **sim** (só ao abrir aba) | Baixadas |
+| Contas Pagar/Receber | `useFinanceData` abertas | **sim** | Abertas (posição atual) |
+| Comparativos | `useFinanceSeries` ×2 | sempre ativo | DRE próprio (self-contained) |
+
+O DRE do ano anterior (para delta) só é buscado quando a aba Overview está ativa.
+
+### Pendências conhecidas
+
+- **`contasAbertas` (PayablesPage):** shape do JSON não validado com dados reais — pode precisar de ajuste em `normalizeAberta`.
+- **PROD:** criar `ContabilGateway.ashx` no IIS análogo ao `RentabilidadeGateway.ashx` para ambiente de produção.
+- **`useFinanceSeries` progressivo:** atualmente `Promise.all` aguarda todos os meses antes de atualizar estado — não há progresso incremental. Para spans longos (6-12 meses), avaliar atualização mês a mês via `setState` incremental.
+- **Comparativos — ExportProvider:** `ComparePage` usa seu próprio `ExportProvider` interno com ctx baseado no período A. Se migrar para receber ctx do pai, remover o provider interno.

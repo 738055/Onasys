@@ -19,26 +19,29 @@ function DeltaBadge({ value, invert = false }) {
   );
 }
 
-function PeriodSelector({ label, year, setYear, startMonth, setStartMonth, endMonth, setEndMonth }) {
+function PeriodSelector({ label, color, year, setYear, startMonth, setStartMonth, endMonth, setEndMonth }) {
   const currentYear = new Date().getFullYear();
+  const cls = 'text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400';
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-panel p-4 space-y-3">
-      <p className="text-xs font-semibold text-slate-600 uppercase tracking-widest">{label}</p>
+    <div className={`bg-white rounded-xl border-2 shadow-panel p-4 space-y-3 ${color}`}>
+      <p className="text-xs font-bold text-slate-700 uppercase tracking-widest">{label}</p>
       <div className="flex items-center gap-2 flex-wrap">
-        <select value={year} onChange={e => setYear(Number(e.target.value))}
-          className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
-          {[currentYear-2,currentYear-1,currentYear,currentYear+1].map(y => (
+        <select value={year} onChange={e => setYear(Number(e.target.value))} className={cls}>
+          {[currentYear-3,currentYear-2,currentYear-1,currentYear,currentYear+1].map(y => (
             <option key={y} value={y}>{y}</option>
           ))}
         </select>
-        <select value={startMonth} onChange={e => setStartMonth(Number(e.target.value))}
-          className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        <select value={startMonth} onChange={e => setStartMonth(Number(e.target.value))} className={cls}>
           {MONTHS_SHORT.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
         </select>
         <span className="text-xs text-slate-400">até</span>
-        <select value={endMonth} onChange={e => setEndMonth(Number(e.target.value))}
-          className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
-          {MONTHS_SHORT.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+        <select value={endMonth} onChange={e => {
+          const v = Number(e.target.value);
+          setEndMonth(v < startMonth ? startMonth : v);
+        }} className={cls}>
+          {MONTHS_SHORT.map((m, i) => (
+            <option key={i+1} value={i+1} disabled={i+1 < startMonth}>{m}</option>
+          ))}
         </select>
       </div>
     </div>
@@ -49,6 +52,15 @@ export default function ComparePage() {
   const currentYear  = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
 
+  // ── Draft states — editáveis sem disparar fetch ────────────────────────────
+  const [draftYearA,       setDraftYearA]       = useState(currentYear);
+  const [draftStartMonthA, setDraftStartMonthA] = useState(1);
+  const [draftEndMonthA,   setDraftEndMonthA]   = useState(currentMonth);
+  const [draftYearB,       setDraftYearB]       = useState(currentYear - 1);
+  const [draftStartMonthB, setDraftStartMonthB] = useState(1);
+  const [draftEndMonthB,   setDraftEndMonthB]   = useState(currentMonth);
+
+  // ── Committed states — disparam useFinanceSeries ───────────────────────────
   const [yearA,       setYearA]       = useState(currentYear);
   const [startMonthA, setStartMonthA] = useState(1);
   const [endMonthA,   setEndMonthA]   = useState(currentMonth);
@@ -56,14 +68,27 @@ export default function ComparePage() {
   const [startMonthB, setStartMonthB] = useState(1);
   const [endMonthB,   setEndMonthB]   = useState(currentMonth);
 
+  const hasPending =
+    draftYearA !== yearA || draftStartMonthA !== startMonthA || draftEndMonthA !== endMonthA ||
+    draftYearB !== yearB || draftStartMonthB !== startMonthB || draftEndMonthB !== endMonthB;
+
+  function applyChanges() {
+    setYearA(draftYearA);       setStartMonthA(draftStartMonthA); setEndMonthA(draftEndMonthA);
+    setYearB(draftYearB);       setStartMonthB(draftStartMonthB); setEndMonthB(draftEndMonthB);
+  }
+
   const seriesA = useFinanceSeries({ year: yearA, startMonth: startMonthA, endMonth: endMonthA, recurso: 'resultado' });
   const seriesB = useFinanceSeries({ year: yearB, startMonth: startMonthB, endMonth: endMonthB, recurso: 'resultado' });
 
   const compare = useMemo(() => compareKPIs(seriesA.rows, seriesB.rows), [seriesA.rows, seriesB.rows]);
   const byAccA  = useMemo(() => compareByAccount(seriesA.rows, seriesB.rows, 'despesa'), [seriesA.rows, seriesB.rows]);
 
-  const labelA = `${yearA} (${MONTHS_SHORT[startMonthA-1]}–${MONTHS_SHORT[endMonthA-1]})`;
-  const labelB = `${yearB} (${MONTHS_SHORT[startMonthB-1]}–${MONTHS_SHORT[endMonthB-1]})`;
+  const labelA = startMonthA === endMonthA
+    ? `${MONTHS_SHORT[startMonthA-1]}/${yearA}`
+    : `${MONTHS_SHORT[startMonthA-1]}–${MONTHS_SHORT[endMonthA-1]}/${yearA}`;
+  const labelB = startMonthB === endMonthB
+    ? `${MONTHS_SHORT[startMonthB-1]}/${yearB}`
+    : `${MONTHS_SHORT[startMonthB-1]}–${MONTHS_SHORT[endMonthB-1]}/${yearB}`;
 
   const loading = seriesA.loading || seriesB.loading;
 
@@ -106,10 +131,12 @@ export default function ComparePage() {
   };
 
   const kpiRows = [
-    { label: 'Receita',   a: compare.a.receita,   b: compare.b.receita,   delta: compare.deltaReceita,   color: 'text-emerald-700', invert: false },
-    { label: 'Despesa',   a: compare.a.despesa,   b: compare.b.despesa,   delta: compare.deltaDespesa,   color: 'text-red-600',     invert: true  },
-    { label: 'Resultado', a: compare.a.resultado, b: compare.b.resultado, delta: compare.deltaResultado, color: 'text-blue-700',    invert: false },
-    { label: 'Margem %',  a: compare.a.margem,   b: compare.b.margem,   delta: compare.deltaMargem,   color: 'text-indigo-600',  invert: false, isPct: true },
+    { label: 'Receita',           a: compare.a.receita,         b: compare.b.receita,         delta: compare.deltaReceita,     color: 'text-emerald-700', invert: false },
+    { label: 'Custo Serviços',    a: compare.a.csv,             b: compare.b.csv,             delta: compare.deltaCsv,         color: 'text-violet-700',  invert: true  },
+    { label: 'Rec. Líquida %',    a: compare.a.margemBrutaPct,  b: compare.b.margemBrutaPct,  delta: compare.deltaMargemBruta, color: 'text-indigo-700',  invert: false, isPct: true },
+    { label: 'Despesa Total',     a: compare.a.despesa,         b: compare.b.despesa,         delta: compare.deltaDespesa,     color: 'text-red-600',     invert: true  },
+    { label: 'Resultado',         a: compare.a.resultado,       b: compare.b.resultado,       delta: compare.deltaResultado,   color: 'text-blue-700',    invert: false },
+    { label: 'Margem Líquida %',  a: compare.a.margem,          b: compare.b.margem,          delta: compare.deltaMargem,      color: 'text-indigo-600',  invert: false, isPct: true },
   ];
 
   return (
@@ -120,14 +147,46 @@ export default function ComparePage() {
         {!loading && <ExportButton title="Comparativos Financeiro" slug="financeiro-compare" sections={exportSections} />}
       </div>
 
-      {/* Seletores */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <PeriodSelector label="Período A" year={yearA} setYear={setYearA}
-          startMonth={startMonthA} setStartMonth={setStartMonthA}
-          endMonth={endMonthA} setEndMonth={setEndMonthA} />
-        <PeriodSelector label="Período B" year={yearB} setYear={setYearB}
-          startMonth={startMonthB} setStartMonth={setStartMonthB}
-          endMonth={endMonthB} setEndMonth={setEndMonthB} />
+      {/* Seletores + Aplicar */}
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <PeriodSelector
+            label="Período A" color="border-blue-200"
+            year={draftYearA}       setYear={setDraftYearA}
+            startMonth={draftStartMonthA} setStartMonth={setDraftStartMonthA}
+            endMonth={draftEndMonthA}     setEndMonth={setDraftEndMonthA}
+          />
+          <PeriodSelector
+            label="Período B" color="border-slate-200"
+            year={draftYearB}       setYear={setDraftYearB}
+            startMonth={draftStartMonthB} setStartMonth={setDraftStartMonthB}
+            endMonth={draftEndMonthB}     setEndMonth={setDraftEndMonthB}
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          {hasPending ? (
+            <p className="text-xs text-amber-600 font-medium">
+              Alterações pendentes — clique em Aplicar para carregar os dados.
+            </p>
+          ) : (
+            <p className="text-xs text-slate-400">
+              {!loading && seriesA.rows.length > 0
+                ? `${labelA}: ${seriesA.rows.length} lançtos · ${labelB}: ${seriesB.rows.length} lançtos`
+                : ' '}
+            </p>
+          )}
+          <button
+            onClick={applyChanges}
+            disabled={!hasPending}
+            className={`text-xs font-semibold px-4 py-2 rounded-lg transition-colors ${
+              hasPending
+                ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                : 'bg-slate-100 text-slate-400 cursor-default'
+            }`}>
+            Aplicar
+          </button>
+        </div>
       </div>
 
       {loading && <Loader />}

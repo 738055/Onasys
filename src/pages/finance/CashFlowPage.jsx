@@ -6,7 +6,7 @@ import {
 import { ArrowDown, ArrowUp, TrendingUp, Search } from 'lucide-react';
 import { KPICard }      from '../../components/KPICard';
 import { ExportButton } from '../../components/ExportButton';
-import { InfoTooltip }  from '../../components/InfoTooltip';
+import { InfoTooltip, TooltipFormula, TooltipTitle } from '../../components/InfoTooltip';
 import { calcCashKPIs, groupCashByMonth, groupCashByDay, groupCashByPerson } from '../../utils/financeAggregations';
 import { BRLFULL, BRLk, FINANCE_COLORS, fmtMonthKey, fmtDateKey } from '../../utils/financeFormat';
 
@@ -73,17 +73,45 @@ export default function CashFlowPage({ rows, loading }) {
       <div className="flex items-center justify-between">
         <h1 className="text-base font-bold text-slate-800 flex items-center gap-1.5">
           Fluxo de Caixa Realizado
-          <InfoTooltip text="Contas baixadas (pagas/recebidas) no período. Entradas = contas a receber liquidadas; Saídas = contas a pagar liquidadas. Saldo = Entradas − Saídas." />
+          <InfoTooltip>
+            <TooltipTitle>Fluxo de Caixa Realizado</TooltipTitle>
+            <TooltipFormula>Saldo = Entradas (recebimentos) − Saídas (pagamentos)</TooltipFormula>
+            <span className="text-slate-300">Movimentação financeira efetivamente liquidada. Diferente do DRE (regime de competência) — aqui só aparecem valores já pagos/recebidos no período.</span>
+          </InfoTooltip>
         </h1>
         <ExportButton title="Fluxo de Caixa" slug="financeiro-cashflow" sections={exportSections} />
       </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <KPICard title="Entradas (Receber)" value={kpi.entradas} format="currency" icon={ArrowUp}  color="green" />
-        <KPICard title="Saídas (Pagar)"    value={kpi.saidas}   format="currency" icon={ArrowDown} color="red"   />
         <KPICard
-          title="Saldo Líquido"
+          title={<span className="flex items-center gap-1">Entradas<InfoTooltip>
+            <TooltipTitle>Entradas de Caixa</TooltipTitle>
+            <TooltipFormula>Σ títulos RECEBER liquidados no período</TooltipFormula>
+            <span className="text-slate-300">Recebimentos de clientes efetivamente pagos — data de liquidação dentro do período selecionado.</span>
+          </InfoTooltip></span>}
+          value={kpi.entradas}
+          format="currency"
+          icon={ArrowUp}
+          color="green"
+        />
+        <KPICard
+          title={<span className="flex items-center gap-1">Saídas<InfoTooltip>
+            <TooltipTitle>Saídas de Caixa</TooltipTitle>
+            <TooltipFormula>Σ títulos PAGAR liquidados no período</TooltipFormula>
+            <span className="text-slate-300">Pagamentos a fornecedores e despesas efetivamente realizados — data de liquidação dentro do período.</span>
+          </InfoTooltip></span>}
+          value={kpi.saidas}
+          format="currency"
+          icon={ArrowDown}
+          color="red"
+        />
+        <KPICard
+          title={<span className="flex items-center gap-1">Saldo Líquido<InfoTooltip>
+            <TooltipTitle>Saldo do Período</TooltipTitle>
+            <TooltipFormula>Entradas − Saídas</TooltipFormula>
+            <span className="text-slate-300">Fluxo líquido de caixa realizado. Diferente do DRE (regime de competência) — aqui só entram movimentos efetivamente liquidados.</span>
+          </InfoTooltip></span>}
           value={kpi.saldo}
           format="currency"
           icon={TrendingUp}
