@@ -39,8 +39,9 @@ export function buildDREHierarchy(rows) {
           code,
           label: g.label,
           subtotal,
+          // pct = participação da conta DENTRO do grupo (subtotal do grupo = 100%)
           accounts: Object.entries(g.accounts)
-            .map(([name, a]) => ({ name, value: a.value, count: a.count, pct: total > 0 ? a.value / total * 100 : 0 }))
+            .map(([name, a]) => ({ name, value: a.value, count: a.count, pct: subtotal !== 0 ? a.value / subtotal * 100 : 0 }))
             .sort((a, b) => b.value - a.value),
         };
       }).sort((a, b) => b.subtotal - a.subtotal),

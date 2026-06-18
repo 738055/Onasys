@@ -66,12 +66,12 @@ export default function DREPage({ rows, loading }) {
       columns: [
         { key: 'account', label: 'Conta',       type: 'text'     },
         { key: 'value',   label: 'Total',        type: 'currency' },
-        { key: 'pct',     label: '% Despesa',    type: 'percent'  },
+        { key: 'pct',     label: '% Rec. Líq.',  type: 'percent'  },
         { key: 'count',   label: 'Lançamentos',  type: 'number'   },
       ],
       rows: despesas.map(d => ({
         ...d,
-        pct: kpi.receita > 0 ? d.value / kpi.receita * 100 : 0,
+        pct: kpi.margemBruta > 0 ? d.value / kpi.margemBruta * 100 : 0,
       })),
     },
   ], [monthSeries, receitas, despesas, kpi]);
@@ -189,6 +189,8 @@ function HierarchyView({ hierarchy, kpi, months, rows }) {
         color="text-emerald-800 bg-emerald-50 border-emerald-200"
         barColor="#10b981"
         revenueBase={kpi.receita}
+        revenueLabel="% Receita"
+        revenueShort="da receita"
       />
 
       {/* Resultado (linha de resumo) */}
@@ -209,20 +211,22 @@ function HierarchyView({ hierarchy, kpi, months, rows }) {
         </div>
       </div>
 
-      {/* Despesas */}
+      {/* Despesas — % sobre Receita Líquida (já deduzida a Desp. c/ Vendas) */}
       <HierarchySection
         title="DESPESAS"
         groups={hierarchy.despesas.groups}
         total={hierarchy.despesas.total}
         color="text-red-800 bg-red-50 border-red-200"
         barColor="#f43f5e"
-        revenueBase={kpi.receita}
+        revenueBase={kpi.margemBruta}
+        revenueLabel="% Rec. Líq."
+        revenueShort="da rec. líq."
       />
     </div>
   );
 }
 
-function HierarchySection({ title, groups, total, color, barColor, revenueBase }) {
+function HierarchySection({ title, groups, total, color, barColor, revenueBase, revenueLabel = '% Receita', revenueShort = 'da receita' }) {
   const [openGroups, setOpenGroups] = useState({});
   const toggle = (code) => setOpenGroups(prev => ({ ...prev, [code]: !prev[code] }));
 
@@ -249,7 +253,7 @@ function HierarchySection({ title, groups, total, color, barColor, revenueBase }
                 <span className="text-[10px] text-slate-400">({g.accounts.length} contas)</span>
               </div>
               <div className="flex items-center gap-4 text-xs flex-shrink-0">
-                <span className="text-slate-400 tabular-nums">{PCTFMT(revPct)} da receita</span>
+                <span className="text-slate-400 tabular-nums">{PCTFMT(revPct)} {revenueShort}</span>
                 <span className="font-semibold text-slate-700 tabular-nums">{BRLFULL(g.subtotal)}</span>
                 <span className="text-slate-400">{isOpen ? '▲' : '▼'}</span>
               </div>
@@ -264,7 +268,7 @@ function HierarchySection({ title, groups, total, color, barColor, revenueBase }
                       <th className="pb-1.5 pt-2 px-4 text-right font-medium">Lançtos</th>
                       <th className="pb-1.5 pt-2 px-4 text-right font-medium">Valor</th>
                       <th className="pb-1.5 pt-2 px-4 text-right font-medium">% Grupo</th>
-                      <th className="pb-1.5 pt-2 px-4 text-right font-medium">% Receita</th>
+                      <th className="pb-1.5 pt-2 px-4 text-right font-medium">{revenueLabel}</th>
                     </tr>
                   </thead>
                   <tbody>
