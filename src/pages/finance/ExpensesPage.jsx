@@ -50,11 +50,11 @@ export default function ExpensesPage({ rows, loading }) {
       columns: [
         { key: 'account', label: 'Conta',       type: 'text'     },
         { key: 'value',   label: 'Total',        type: 'currency' },
-        { key: 'pct',     label: '% Despesa',    type: 'percent'  },
+        { key: 'pct',     label: '% Rec. Líq.',  type: 'percent'  },
         { key: 'count',   label: 'Lançamentos',  type: 'number'   },
       ],
       rows: filtered.map(d => ({
-        ...d, pct: kpi.receita > 0 ? d.value / kpi.receita * 100 : 0,
+        ...d, pct: kpi.margemBruta > 0 ? d.value / kpi.margemBruta * 100 : 0,
       })),
     },
   ], [filtered, kpi]);
@@ -85,7 +85,7 @@ export default function ExpensesPage({ rows, loading }) {
           <InfoTooltip>
             <TooltipTitle>Overhead — Despesas Gerenciais</TooltipTitle>
             <TooltipFormula>Despesas 4xxx exceto DESPESAS COM VENDAS (CSV)</TooltipFormula>
-            <span className="text-slate-300">Pessoal, encargos, despesas financeiras e outras. O Custo dos Serviços (repasses a fornecedores) é tratado separadamente como CSV na Visão Geral. Os percentuais aqui são sempre em relação à Receita Bruta.</span>
+            <span className="text-slate-300">Pessoal, encargos, despesas financeiras e outras. O Custo dos Serviços (repasses a fornecedores) é tratado separadamente como CSV na Visão Geral. Os percentuais aqui são sempre em relação à Receita Líquida (Receita Bruta − Despesa c/ Vendas).</span>
           </InfoTooltip>
         </h1>
         <ExportButton title="Despesas Financeiro" slug="financeiro-despesas" sections={exportSections} />
@@ -210,7 +210,7 @@ export default function ExpensesPage({ rows, loading }) {
                     </span>
                   </th>
                 ))}
-                <th className="pb-2 text-right font-semibold text-slate-500">% Receita</th>
+                <th className="pb-2 text-right font-semibold text-slate-500" title="Conta ÷ Receita Líquida (Receita Bruta − Despesa c/ Vendas)">% Rec. Líq.</th>
               </tr>
             </thead>
             <tbody>
@@ -222,7 +222,7 @@ export default function ExpensesPage({ rows, loading }) {
                   <td className="py-1.5 text-right tabular-nums text-red-600 font-semibold">{BRLFULL(d.value)}</td>
                   <td className="py-1.5 text-right tabular-nums text-slate-500">{d.count}</td>
                   <td className="py-1.5 text-right tabular-nums text-slate-500">
-                    {kpi.receita > 0 ? PCTFMT(d.value / kpi.receita * 100) : '—'}
+                    {kpi.margemBruta > 0 ? PCTFMT(d.value / kpi.margemBruta * 100) : '—'}
                   </td>
                 </tr>
               ))}
@@ -233,7 +233,7 @@ export default function ExpensesPage({ rows, loading }) {
                 <td className="py-2 text-right tabular-nums text-red-700">{BRLFULL(overheadTotal)}</td>
                 <td className="py-2 text-right tabular-nums">{filtered.reduce((s,d) => s + d.count, 0)}</td>
                 <td className="py-2 text-right tabular-nums text-slate-500">
-                  {kpi.receita > 0 ? PCTFMT(overheadTotal / kpi.receita * 100) : '—'}
+                  {kpi.margemBruta > 0 ? PCTFMT(overheadTotal / kpi.margemBruta * 100) : '—'}
                 </td>
               </tr>
             </tfoot>

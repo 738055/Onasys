@@ -420,7 +420,7 @@ export default function OverviewPage({ rows, prevRows = [], loading, year, start
 
       {/* ── Top categorias ──────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <RankingCard title="Top Overhead por Categoria" items={topDespesas} total={overheadTotal} labelBase={kpi.receita} labelSuffix="da rec." color={FINANCE_COLORS.despesa} />
+        <RankingCard title="Top Overhead por Categoria" items={topDespesas} total={overheadTotal} labelBase={kpi.margemBruta} labelSuffix="da rec. líq." color={FINANCE_COLORS.despesa} />
         <RankingCard title="Fontes de Receita"          items={topReceitas} total={kpi.receita}  color={FINANCE_COLORS.receita} />
       </div>
 

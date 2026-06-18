@@ -229,6 +229,7 @@ function HierarchyView({ hierarchy, kpi, months, rows }) {
 function HierarchySection({ title, groups, total, color, barColor, revenueBase, revenueLabel = '% Receita', revenueShort = 'da receita' }) {
   const [openGroups, setOpenGroups] = useState({});
   const toggle = (code) => setOpenGroups(prev => ({ ...prev, [code]: !prev[code] }));
+  const sectionShort = title === 'RECEITAS' ? 'das receitas' : 'das despesas';
 
   return (
     <div className={`rounded-xl border overflow-hidden ${color}`}>
@@ -253,7 +254,7 @@ function HierarchySection({ title, groups, total, color, barColor, revenueBase, 
                 <span className="text-[10px] text-slate-400">({g.accounts.length} contas)</span>
               </div>
               <div className="flex items-center gap-4 text-xs flex-shrink-0">
-                <span className="text-slate-400 tabular-nums">{PCTFMT(revPct)} {revenueShort}</span>
+                <span className="text-slate-400 tabular-nums">{PCTFMT(groupPct)} {sectionShort} · {PCTFMT(revPct)} {revenueShort}</span>
                 <span className="font-semibold text-slate-700 tabular-nums">{BRLFULL(g.subtotal)}</span>
                 <span className="text-slate-400">{isOpen ? '▲' : '▼'}</span>
               </div>
@@ -267,8 +268,8 @@ function HierarchySection({ title, groups, total, color, barColor, revenueBase, 
                       <th className="pb-1.5 pt-2 px-8 text-left font-medium">Conta</th>
                       <th className="pb-1.5 pt-2 px-4 text-right font-medium">Lançtos</th>
                       <th className="pb-1.5 pt-2 px-4 text-right font-medium">Valor</th>
-                      <th className="pb-1.5 pt-2 px-4 text-right font-medium">% Grupo</th>
-                      <th className="pb-1.5 pt-2 px-4 text-right font-medium">{revenueLabel}</th>
+                      <th className="pb-1.5 pt-2 px-4 text-right font-medium" title="Participação da conta dentro deste grupo (as contas do grupo somam 100%).">% Grupo</th>
+                      <th className="pb-1.5 pt-2 px-4 text-right font-medium" title={revenueShort === 'da rec. líq.' ? 'Conta ÷ Receita Líquida (receita − Despesa c/ Vendas).' : 'Conta ÷ Receita Bruta.'}>{revenueLabel}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -294,7 +295,7 @@ function HierarchySection({ title, groups, total, color, barColor, revenueBase, 
                       <td className="py-1.5 px-8 font-semibold text-slate-600">Subtotal {g.label}</td>
                       <td />
                       <td className="py-1.5 px-4 text-right tabular-nums font-bold text-slate-800">{BRLFULL(g.subtotal)}</td>
-                      <td className="py-1.5 px-4 text-right tabular-nums font-semibold text-slate-500">{PCTFMT(groupPct)}</td>
+                      <td className="py-1.5 px-4 text-right tabular-nums font-semibold text-slate-300" title="Soma das contas do grupo = 100%">{PCTFMT(100)}</td>
                       <td className="py-1.5 px-4 text-right tabular-nums font-semibold text-slate-400">{PCTFMT(revPct)}</td>
                     </tr>
                   </tfoot>
