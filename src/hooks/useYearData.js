@@ -21,6 +21,8 @@ export function useYearData({ year, qualPeriodo, nSistema }) {
 
     let apiPrefix = '';
     const hostname = window.location.hostname;
+    
+    //AJUSTE PARA CONEXAO COM O IIS, PARA QUE FUNCIONE NO AMBIENTE DE HOMOLOGAÇÃO E PRODUÇÃO
 
     // Deteta se é 'localhost', um IP (ex: 192.168.25.240) ou um nome de PC interno (sem pontos)
     const isLocalOuIP = hostname === 'localhost' || /^[0-9.]+$/.test(hostname) || !hostname.includes('.');
@@ -32,6 +34,7 @@ export function useYearData({ year, qualPeriodo, nSistema }) {
             apiPrefix = '/' + pastas[1]; 
         }
     }
+
 
     // Monta a URL cravada na pasta proxy da raiz da aplicação
     const endpoint = import.meta.env.DEV 
